@@ -6,6 +6,7 @@ window.__minibiaBotBundle.installAutoEatModule = function installAutoEatModule(b
     running: false,
     timerId: null,
     lastFoodAt: 0,
+    pendingContainerUse: null,
   };
   let resumeListenersAttached = false;
 
@@ -94,43 +95,129 @@ window.__minibiaBotBundle.installAutoEatModule = function installAutoEatModule(b
     );
   }
 
+  function dispatchMouseEvent(element, type, options) {
+    element.dispatchEvent(
+      new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        ...options,
+      })
+    );
+  }
+
   function openSlotContextMenu(slot) {
     if (!slot?.element) return false;
 
     const rect = slot.element.getBoundingClientRect();
-    slot.element.dispatchEvent(
-      new MouseEvent("contextmenu", {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        button: 2,
-        buttons: 2,
-        clientX: rect.left + 5,
-        clientY: rect.top + 5,
-      })
-    );
+    const clientX = rect.left + 5;
+    const clientY = rect.top + 5;
+
+    dispatchMouseEvent(slot.element, "pointerdown", {
+      button: 2,
+      buttons: 2,
+      clientX,
+      clientY,
+      pointerType: "mouse",
+      isPrimary: false,
+    });
+    dispatchMouseEvent(slot.element, "mousedown", {
+      button: 2,
+      buttons: 2,
+      clientX,
+      clientY,
+    });
+    dispatchMouseEvent(slot.element, "mouseup", {
+      button: 2,
+      buttons: 0,
+      clientX,
+      clientY,
+    });
+    dispatchMouseEvent(slot.element, "pointerup", {
+      button: 2,
+      buttons: 0,
+      clientX,
+      clientY,
+      pointerType: "mouse",
+      isPrimary: false,
+    });
+    dispatchMouseEvent(slot.element, "contextmenu", {
+      button: 2,
+      buttons: 0,
+      clientX,
+      clientY,
+    });
 
     return true;
   }
 
-  function clickContainerUse() {
-    const menu = window.gameClient?.interface?.menuManager?.menus?.["container-menu"];
-    const root = menu?.element;
-    if (!root) return false;
+  function getVisibleMenuRoots() {
+    return Object.values(window.gameClient?.interface?.menuManager?.menus || {})
+      .map((menu) => menu?.element)
+      .filter((element) => element instanceof Element);
+  }
 
-    const useEntry = Array.from(root.querySelectorAll("*")).find((element) =>
-      /^use$/i.test((element.textContent || "").trim())
-    );
+  function findUseEntry() {
+    for (const root of getVisibleMenuRoots()) {
+      const useEntry = Array.from(root.querySelectorAll("*")).find((element) =>
+        /^use$/i.test((element.textContent || "").trim())
+      );
+      if (useEntry) {
+        return useEntry;
+      }
+    }
+
+    return null;
+  }
+
+  function clearPendingContainerUse() {
+    if (state.pendingContainerUse?.timerId != null) {
+      window.clearTimeout(state.pendingContainerUse.timerId);
+    }
+
+    state.pendingContainerUse = null;
+  }
+
+  function clickPendingContainerUse(attempt = 0) {
+    const pending = state.pendingContainerUse;
+    if (!pending) {
+      return false;
+    }
+
+    const useEntry = findUseEntry();
 
     if (!useEntry) {
+      if (attempt >= 20) {
+        bot.log("auto eat failed to find container use entry", {
+          name: pending.target.name,
+          sid: pending.target.item.sid,
+        });
+        clearPendingContainerUse();
+        return false;
+      }
+
+      pending.timerId = window.setTimeout(() => {
+        clickPendingContainerUse(attempt + 1);
+      }, 50);
       return false;
     }
 
     useEntry.click();
+    state.lastFoodAt = Date.now();
+    bot.log("used food from open container", {
+      name: pending.target.name,
+      count: pending.target.count,
+      sid: pending.target.item.sid,
+    });
+    clearPendingContainerUse();
     return true;
   }
 
   function eatFromOpenContainers() {
+    if (state.pendingContainerUse) {
+      return true;
+    }
+
     const foodSlots = getFoodSlots().sort((a, b) => a.count - b.count);
     const target = foodSlots[0];
 
@@ -142,17 +229,12 @@ window.__minibiaBotBundle.installAutoEatModule = function installAutoEatModule(b
       return false;
     }
 
-    const used = clickContainerUse();
-    if (used) {
-      state.lastFoodAt = Date.now();
-      bot.log("used food from open container", {
-        name: target.name,
-        count: target.count,
-        sid: target.item.sid,
-      });
-    }
-
-    return used;
+    state.pendingContainerUse = {
+      target,
+      timerId: null,
+    };
+    clickPendingContainerUse();
+    return true;
   }
 
   function tryEat() {
@@ -269,6 +351,7 @@ window.__minibiaBotBundle.installAutoEatModule = function installAutoEatModule(b
       state.timerId = null;
     }
 
+    clearPendingContainerUse();
     detachResumeListeners();
 
     config.enabled = false;
