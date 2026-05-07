@@ -12,7 +12,7 @@ window.__minibiaBotBundle.installPanicModule = function installPanicModule(bot) 
 
   const config = Object.assign(
     {
-      tickMs: 1000,
+      tickMs: 200,
       triggerCooldownMs: 4000,
       unknownPlayerEnabled: false,
       healthLossEnabled: false,
@@ -51,7 +51,16 @@ window.__minibiaBotBundle.installPanicModule = function installPanicModule(bot) 
   }
 
   function getVisiblePlayers() {
-    return bot.xray?.getVisiblePlayers?.({ sameFloorOnly: true }) || [];
+    const me = bot.getPlayerPosition();
+    const players = bot.xray?.getVisiblePlayers?.() || [];
+    if (!me) {
+      return players;
+    }
+
+    return players.filter((creature) => {
+      const z = Number(creature?.__position?.z);
+      return Number.isFinite(z) && Math.abs(z - me.z) <= 1;
+    });
   }
 
   function getUnknownVisiblePlayers() {
