@@ -6,6 +6,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
   const transitionStorageKey = "minibiaBot.cave.transitions";
   const minimapOverlayRootId = "minibia-bot-cave-minimap-overlay";
   const minimapOverlayStyleId = "minibia-bot-cave-minimap-overlay-style";
+  const ladderItemIds = new Set([1948, 1968]);
   const state = {
     running: false,
     timerId: null,
@@ -205,7 +206,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     return normalizePosition(tile?.__position);
   }
 
-  function getFloorChangeDefinition(itemId) {
+  function getThingDefinition(itemId) {
     if (!itemId) {
       return null;
     }
@@ -217,9 +218,26 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     );
   }
 
+  function getThingName(thing) {
+    const definition = getThingDefinition(thing?.id);
+    return String(definition?.properties?.name || thing?.name || "").trim().toLowerCase();
+  }
+
+  function isLadderThing(thing) {
+    if (!thing?.id) {
+      return false;
+    }
+
+    if (ladderItemIds.has(Number(thing.id))) {
+      return true;
+    }
+
+    return getThingName(thing).includes("ladder");
+  }
+
   function isFloorChangeThing(thing) {
-    const definition = getFloorChangeDefinition(thing?.id);
-    return !!definition?.properties?.floorchange;
+    const definition = getThingDefinition(thing?.id);
+    return !!definition?.properties?.floorchange || isLadderThing(thing);
   }
 
   function isFloorChangeTile(tile) {
@@ -233,6 +251,68 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     }
 
     return Array.isArray(tile.items) && tile.items.some((item) => isFloorChangeThing(item));
+  }
+
+  function getTileThings(tile) {
+    if (!tile) {
+      return [];
+    }
+
+    const things = [];
+    if (tile.id) {
+      things.push(tile);
+    }
+    if (Array.isArray(tile.items)) {
+      tile.items.forEach((item) => {
+        if (item) {
+          things.push(item);
+        }
+      });
+    }
+    return things;
+  }
+
+  function tileHasNamedThing(tile, needle) {
+    const value = String(needle || "").trim().toLowerCase();
+    if (!value) {
+      return false;
+    }
+
+    return getTileThings(tile).some((thing) => getThingName(thing).includes(value));
+  }
+
+  function isLadderTile(tile) {
+    return getTileThings(tile).some((thing) => isLadderThing(thing));
+  }
+
+  function isStairsTile(tile) {
+    return tileHasNamedThing(tile, "stairs");
+  }
+
+  function isHoleTile(tile) {
+    return tileHasNamedThing(tile, "hole");
+  }
+
+  function getFloorChangeTileBias(tile, position, waypoint) {
+    if (!tile || !position || !waypoint || position.z === waypoint.z) {
+      return 0;
+    }
+
+    const goingDown = waypoint.z > position.z;
+    const goingUp = waypoint.z < position.z;
+
+    if (goingDown) {
+      if (isLadderTile(tile)) return -30;
+      if (isHoleTile(tile)) return -20;
+      if (isStairsTile(tile)) return 25;
+    }
+
+    if (goingUp) {
+      if (isStairsTile(tile)) return -20;
+      if (isHoleTile(tile)) return 20;
+    }
+
+    return 0;
   }
 
   function getLoadedTiles() {
@@ -529,7 +609,10 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       const playerDistance = getDistance(position, entry.position);
       const tileToWaypointDistance =
         Math.abs(entry.position.x - waypoint.x) + Math.abs(entry.position.y - waypoint.y);
-      const score = playerDistance * 10 + tileToWaypointDistance;
+      const score =
+        playerDistance * 10 +
+        tileToWaypointDistance +
+        getFloorChangeTileBias(entry.tile, position, waypoint);
 
       if (score < bestScore) {
         bestScore = score;
@@ -663,16 +746,34 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
 
   function useFloorChangeTile(target, waypoint, now = Date.now()) {
     const position = normalizePosition(bot.getPlayerPosition());
-    if (!position || !target) {
+    const targetPosition = normalizePosition(target?.position);
+    const targetTile = target?.tile || (targetPosition ? getTileAt(targetPosition) : null);
+    if (!position || !targetPosition || !targetTile) {
       return false;
-    }
-
-    if (!isSameTile(position, target.position)) {
-      return goToPosition(target.position);
     }
 
     if (now - state.lastStairsUseAt < 1200) {
       return true;
+    }
+
+    if (!isFloorChangeTile(targetTile)) {
+      return false;
+    }
+
+    if (isLadderTile(targetTile)) {
+      window.gameClient?.mouse?.use?.({ which: targetTile, index: 0xFF });
+      state.lastStairsUseAt = now;
+      state.lastPathAt = now;
+      markPendingTransitionSource(targetPosition);
+      bot.log("cave used ladder tile", {
+        source: targetPosition,
+        targetZ: waypoint?.z ?? null,
+      });
+      return true;
+    }
+
+    if (!isSameTile(position, targetPosition)) {
+      return goToPosition(targetPosition);
     }
 
     const currentTile = getTileAt(position);
