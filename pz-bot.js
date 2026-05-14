@@ -694,15 +694,10 @@ window.__minibiaBotBundle.installXrayModule = function installXrayModule(bot) {
     return dx <= 8 && dy <= 6;
   }
 
-  function getVisibleCreatures() {
-    const me = bot.getPlayerPosition();
+  function getTrackedCreatures() {
     const myState = bot.getPlayerState();
     const myId = window.gameClient?.player?.id;
     const myName = normalizeName(myState?.name);
-
-    if (!me) {
-      return [];
-    }
 
     return Object.values(window.gameClient?.world?.activeCreatures || {}).filter((creature) => {
       if (!creature) return false;
@@ -711,8 +706,18 @@ window.__minibiaBotBundle.installXrayModule = function installXrayModule(bot) {
       const name = normalizeName(creature.name);
       if (name && name === myName) return false;
 
-      return isWithinVisibleRange(me, creature.__position);
+      return true;
     });
+  }
+
+  function getVisibleCreatures() {
+    const me = bot.getPlayerPosition();
+    if (!me) {
+      return [];
+    }
+
+    // Keep the visible query strict; panic logic relies on this staying screen-limited.
+    return getTrackedCreatures().filter((creature) => isWithinVisibleRange(me, creature.__position));
   }
 
   function getVisiblePlayers(options = {}) {
@@ -802,9 +807,28 @@ window.__minibiaBotBundle.installXrayModule = function installXrayModule(bot) {
       return [];
     }
 
-    return getVisibleCreatures().filter(
-      (creature) => creature?.__position?.z != null && creature.__position.z !== me.z
-    );
+    return getTrackedCreatures().filter((creature) => {
+      const pos = creature?.__position;
+      if (!pos || pos.z == null) {
+        return false;
+      }
+
+      if (pos.z !== me.z) {
+        return isWithinVisibleRange(me, pos);
+      }
+
+      return creature.type !== 0 && !isWithinVisibleRange(me, pos);
+    });
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+  }
+
+  function getSameFloorOffscreenMarkerText(creature, healthLabel) {
+    return healthLabel
+      ? `${creature.name || "Mob"} ${healthLabel}`
+      : `${creature.name || "Mob"}`;
   }
 
   function ensureOverlayStyle() {
@@ -833,6 +857,12 @@ window.__minibiaBotBundle.installXrayModule = function installXrayModule(bot) {
         color: #ffe7ae;
         font: 11px/1.2 Verdana, sans-serif;
         white-space: nowrap;
+      }
+
+      #${overlayRootId} .mb-xray-marker.mb-xray-marker-offscreen {
+        border-color: rgba(123, 235, 178, 0.92);
+        background: rgba(11, 61, 43, 0.8);
+        color: #d8ffea;
       }
     `;
     document.head.appendChild(style);
@@ -881,6 +911,7 @@ window.__minibiaBotBundle.installXrayModule = function installXrayModule(bot) {
 
     const tileWidth = viewportRect.width / 17;
     const tileHeight = viewportRect.height / 13;
+    const edgePadding = 48;
 
     creatures.forEach((creature) => {
       const pos = creature?.__position;
@@ -888,16 +919,33 @@ window.__minibiaBotBundle.installXrayModule = function installXrayModule(bot) {
 
       const dx = pos.x - me.x;
       const dy = pos.y - me.y;
-      const floorOffset = me.z - pos.z;
-      const floorLabel = floorOffset === 0 ? "0" : floorOffset > 0 ? `+${floorOffset}` : `${floorOffset}`;
       const healthLabel = readCreatureHealth(creature);
       const marker = document.createElement("div");
       marker.className = "mb-xray-marker";
-      marker.textContent = healthLabel
-        ? `${creature.name || "Mob"} (${floorLabel}) ${healthLabel}`
-        : `${creature.name || "Mob"} (${floorLabel})`;
-      marker.style.left = `${viewportRect.left + ((dx + 8.5) * tileWidth)}px`;
-      marker.style.top = `${viewportRect.top + ((dy + 6.5) * tileHeight)}px`;
+
+      if (pos.z === me.z) {
+        marker.classList.add("mb-xray-marker-offscreen");
+        marker.textContent = getSameFloorOffscreenMarkerText(creature, healthLabel);
+        marker.style.left = `${clamp(
+          viewportRect.left + ((dx + 8.5) * tileWidth),
+          viewportRect.left + edgePadding,
+          viewportRect.right - edgePadding
+        )}px`;
+        marker.style.top = `${clamp(
+          viewportRect.top + ((dy + 6.5) * tileHeight),
+          viewportRect.top + edgePadding,
+          viewportRect.bottom - edgePadding
+        )}px`;
+      } else {
+        const floorOffset = me.z - pos.z;
+        const floorLabel = floorOffset === 0 ? "0" : floorOffset > 0 ? `+${floorOffset}` : `${floorOffset}`;
+        marker.textContent = healthLabel
+          ? `${creature.name || "Mob"} (${floorLabel}) ${healthLabel}`
+          : `${creature.name || "Mob"} (${floorLabel})`;
+        marker.style.left = `${viewportRect.left + ((dx + 8.5) * tileWidth)}px`;
+        marker.style.top = `${viewportRect.top + ((dy + 6.5) * tileHeight)}px`;
+      }
+
       root.appendChild(marker);
     });
   }
