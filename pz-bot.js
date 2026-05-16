@@ -2066,6 +2066,11 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
     combatStartedAt: 0,
     lastChaseAt: 0,
     lastChaseDestinationKey: null,
+    lastFollowTargetId: null,
+    lastFollowDistance: Number.POSITIVE_INFINITY,
+    lastFollowProgressAt: 0,
+    lastFollowStallAt: 0,
+    skippedTargetIds: new Map(),
   };
 
   const storedConfig = bot.storage.get(configStorageKey, {}) || {};
@@ -2185,10 +2190,44 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
     return window.gameClient?.player?.__followTarget || null;
   }
 
+  function pruneSkippedTargets(now = Date.now()) {
+    for (const [id, expiresAt] of state.skippedTargetIds.entries()) {
+      if (expiresAt <= now) {
+        state.skippedTargetIds.delete(id);
+      }
+    }
+  }
+
+  function resetFollowProgress() {
+    state.lastFollowTargetId = null;
+    state.lastFollowDistance = Number.POSITIVE_INFINITY;
+    state.lastFollowProgressAt = 0;
+    state.lastFollowStallAt = 0;
+  }
+
   function clearEngagedTarget() {
     state.engagedTargetId = null;
     state.combatStartedAt = 0;
     state.lastChaseDestinationKey = null;
+    resetFollowProgress();
+  }
+
+  function clearCurrentFollowTarget() {
+    if (!window.gameClient?.player || typeof window.gameClient.send !== "function") {
+      return false;
+    }
+
+    if (typeof FollowPacket !== "function") {
+      return false;
+    }
+
+    if (!getCurrentFollowTarget()) {
+      return false;
+    }
+
+    window.gameClient.player.setFollowTarget(null);
+    window.gameClient.send(new FollowPacket(0));
+    return true;
   }
 
   function clearCurrentTarget() {
@@ -2262,6 +2301,85 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
     return null;
   }
 
+  function setCurrentTarget(target) {
+    if (!target || !window.gameClient?.player || typeof window.gameClient.send !== "function") {
+      return false;
+    }
+
+    if (typeof TargetPacket !== "function") {
+      return false;
+    }
+
+    window.gameClient.player.setTarget(target);
+    window.gameClient.send(new TargetPacket(target.id));
+    state.engagedTargetId = target.id;
+    return true;
+  }
+
+  function setCurrentFollowTarget(target) {
+    if (!target || !window.gameClient?.player || typeof window.gameClient.send !== "function") {
+      return false;
+    }
+
+    if (typeof FollowPacket !== "function") {
+      return false;
+    }
+
+    if (isSameCreature(getCurrentFollowTarget(), target)) {
+      return true;
+    }
+
+    window.gameClient.player.setFollowTarget(target);
+    window.gameClient.send(new FollowPacket(target.id));
+    return true;
+  }
+
+  function skipTarget(target, reason, now = Date.now(), skipMs = 4000) {
+    if (!target?.id) {
+      return false;
+    }
+
+    const until = now + Math.max(500, Number(skipMs) || 0);
+    state.skippedTargetIds.set(target.id, until);
+
+    const clearedTarget = isSameCreature(getCurrentTarget(), target) ? clearCurrentTarget() : false;
+    const clearedFollow = isSameCreature(getCurrentFollowTarget(), target) ? clearCurrentFollowTarget() : false;
+
+    if (state.engagedTargetId === target.id) {
+      clearEngagedTarget();
+    } else if (state.lastFollowTargetId === target.id) {
+      resetFollowProgress();
+    }
+
+    bot.log("skipping auto attack target", {
+      id: target.id,
+      name: target.name || "Mob",
+      reason,
+      skippedForMs: Math.max(500, Number(skipMs) || 0),
+      clearedTarget,
+      clearedFollow,
+    });
+    return true;
+  }
+
+  function isTargetSkipped(target, now = Date.now()) {
+    pruneSkippedTargets(now);
+    return !!target?.id && (state.skippedTargetIds.get(target.id) || 0) > now;
+  }
+
+  function getMonsterCandidates(now = Date.now()) {
+    pruneSkippedTargets(now);
+
+    const playerPosition = normalizePosition(bot.getPlayerPosition());
+    return getNearbyMonsters()
+      .filter((monster) => !isTargetSkipped(monster, now))
+      .sort((left, right) => {
+        const leftDistance = getTileDistance(playerPosition, normalizePosition(left?.getPosition?.() || left?.__position));
+        const rightDistance = getTileDistance(playerPosition, normalizePosition(right?.getPosition?.() || right?.__position));
+        return leftDistance - rightDistance || Number(left?.id || 0) - Number(right?.id || 0);
+      });
+  }
+
   function shouldGiveUpTarget(target) {
     const maxTargetDistance = Math.max(1, Number(config.maxTargetDistance) || 8);
     const playerPosition = normalizePosition(bot.getPlayerPosition());
@@ -2276,23 +2394,19 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
   function resetTargetIfTooFar() {
     const currentTarget = getCurrentTarget();
     if (currentTarget && shouldGiveUpTarget(currentTarget)) {
-      const targetPosition = normalizePosition(currentTarget.getPosition?.() || currentTarget.__position);
-      const cleared = clearCurrentTarget();
-      clearEngagedTarget();
-      if (cleared) {
-        bot.log("gave up distant auto attack target", {
-          id: currentTarget.id,
-          name: currentTarget.name || "Mob",
-          position: targetPosition,
-          maxTargetDistance: Math.max(1, Number(config.maxTargetDistance) || 8),
-        });
-      }
+      skipTarget(currentTarget, "target too far", Date.now(), 2500);
+      bot.log("gave up distant auto attack target", {
+        id: currentTarget.id,
+        name: currentTarget.name || "Mob",
+        position: normalizePosition(currentTarget.getPosition?.() || currentTarget.__position),
+        maxTargetDistance: Math.max(1, Number(config.maxTargetDistance) || 8),
+      });
       return true;
     }
 
     const engagedTarget = getEngagedTarget();
     if (engagedTarget && shouldGiveUpTarget(engagedTarget)) {
-      clearEngagedTarget();
+      skipTarget(engagedTarget, "engaged target too far", Date.now(), 2500);
       bot.log("gave up distant auto attack target", {
         id: engagedTarget.id,
         name: engagedTarget.name || "Mob",
@@ -2305,24 +2419,17 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
     return false;
   }
 
-  function goToPosition(position) {
-    const from = bot.getPlayerPosition();
-    if (!from || !position) {
-      return false;
+  function getTileFromPosition(position) {
+    if (!position || typeof Position !== "function") {
+      return null;
     }
 
-    const to = new Position(position.x, position.y, position.z);
-
-    try {
-      window.gameClient?.world?.pathfinder?.findPath?.(from, to);
-      return true;
-    } catch (error) {
-      bot.log("auto attack pathing failed", { ...position, error: error?.message || error });
-      return false;
-    }
+    return window.gameClient?.world?.getTileFromWorldPosition?.(
+      new Position(position.x, position.y, position.z)
+    ) || null;
   }
 
-  function findAdjacentWalkablePosition(targetPosition, playerPosition) {
+  function findReachableAdjacentPosition(targetPosition, playerPosition) {
     if (!targetPosition || !playerPosition) {
       return null;
     }
@@ -2340,15 +2447,38 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
       return da - db;
     });
 
+    const pathfinder = window.gameClient?.world?.pathfinder;
+    const startTile = getTileFromPosition(playerPosition);
+    if (!pathfinder || !startTile || typeof pathfinder.search !== "function") {
+      return null;
+    }
+
     for (const offset of offsets) {
-      const candidate = new Position(
-        targetPosition.x + offset.x,
-        targetPosition.y + offset.y,
-        targetPosition.z
-      );
-      const tile = window.gameClient?.world?.getTileFromWorldPosition?.(candidate);
-      if (tile?.isWalkable?.()) {
-        return normalizePosition(candidate);
+      const candidatePosition = {
+        x: targetPosition.x + offset.x,
+        y: targetPosition.y + offset.y,
+        z: targetPosition.z,
+      };
+      const tile = getTileFromPosition(candidatePosition);
+      if (!tile?.isWalkable?.()) {
+        continue;
+      }
+
+      if (candidatePosition.x === playerPosition.x && candidatePosition.y === playerPosition.y) {
+        return candidatePosition;
+      }
+
+      try {
+        const path = pathfinder.search(startTile, tile);
+        if (Array.isArray(path) && path.length > 0) {
+          return candidatePosition;
+        }
+      } catch (error) {
+        bot.log("auto attack reachability check failed", {
+          ...candidatePosition,
+          error: error?.message || error,
+        });
+        return null;
       }
     }
 
@@ -2372,36 +2502,61 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
       return false;
     }
 
+    const giveUpDelayMs = Math.max(5000, (Number(config.tickMs) || 0) * 10);
+
     if (isAdjacentTile(playerPosition, targetPosition)) {
       state.lastChaseDestinationKey = null;
+      clearCurrentFollowTarget();
+      resetFollowProgress();
       return false;
     }
 
-    const adjacentPosition = findAdjacentWalkablePosition(targetPosition, playerPosition);
+    const adjacentPosition = findReachableAdjacentPosition(targetPosition, playerPosition);
     if (!adjacentPosition) {
+      if (!state.lastFollowStallAt) {
+        state.lastFollowStallAt = now;
+        return false;
+      }
+
+      if (now - state.lastFollowStallAt > giveUpDelayMs) {
+        return skipTarget(target, "no reachable adjacent tile", now);
+      }
+
       return false;
     }
 
-    const destinationKey = getPositionKey(adjacentPosition);
-    if (
-      destinationKey === state.lastChaseDestinationKey &&
-      now - state.lastChaseAt < Math.max(350, Number(config.tickMs) || 0)
-    ) {
-      return false;
+    const currentDistance = getTileDistance(playerPosition, targetPosition);
+    if (state.lastFollowTargetId !== target.id) {
+      state.lastFollowTargetId = target.id;
+      state.lastFollowDistance = currentDistance;
+      state.lastFollowProgressAt = now;
+      state.lastFollowStallAt = 0;
+    } else if (currentDistance < state.lastFollowDistance) {
+      state.lastFollowDistance = currentDistance;
+      state.lastFollowProgressAt = now;
+      state.lastFollowStallAt = 0;
     }
 
-    const moved = goToPosition(adjacentPosition);
-    if (moved) {
+    const followed = setCurrentFollowTarget(target);
+    if (followed) {
       state.lastChaseAt = now;
-      state.lastChaseDestinationKey = destinationKey;
-      bot.log("chasing auto attack target", {
+      state.lastChaseDestinationKey = getPositionKey(adjacentPosition);
+      bot.log("following auto attack target", {
         id: target.id,
         name: target.name || "Mob",
-        destination: adjacentPosition,
+        followTargetId: target.id,
       });
     }
 
-    return moved;
+    if (state.lastFollowDistance <= currentDistance) {
+      if (!state.lastFollowStallAt) {
+        state.lastFollowStallAt = now;
+      } else if (now - state.lastFollowStallAt > giveUpDelayMs) {
+        return skipTarget(target, "follow made no progress", now);
+      }
+    }
+
+    return followed;
   }
 
   function canAttack(now = Date.now()) {
@@ -2415,7 +2570,7 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
     }
 
     if (config.meleeMode) {
-      return getNearbyMonsters().length > 0 && !getCurrentTarget();
+      return getMonsterCandidates(now).length > 0 && !getCurrentTarget();
     }
 
     return getNearbyMonsters().length > 0;
@@ -2423,6 +2578,25 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
 
   function triggerAttack(now = Date.now()) {
     if (!canAttack(now)) {
+      return false;
+    }
+
+    const engagedTarget = getEngagedTarget();
+    const preferredTarget = engagedTarget && !isTargetSkipped(engagedTarget, now)
+      ? engagedTarget
+      : (getMonsterCandidates(now)[0] || null);
+    if (preferredTarget && setCurrentTarget(preferredTarget)) {
+      state.lastTargetHotkeyAt = now;
+      markCombatActive(now);
+      bot.log("selected auto attack target", {
+        id: preferredTarget.id,
+        name: preferredTarget.name || "Mob",
+        reason: isSameCreature(preferredTarget, engagedTarget) ? "engaged target" : "nearest candidate",
+      });
+      return true;
+    }
+
+    if (config.meleeMode) {
       return false;
     }
 
@@ -2554,6 +2728,8 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
 
     clearEngagedTarget();
     state.lastChaseAt = 0;
+    clearCurrentFollowTarget();
+    state.skippedTargetIds.clear();
 
     bot.log("auto attack stopped");
     return true;
