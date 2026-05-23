@@ -210,6 +210,13 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     autoHealToggle.checked = !!bot.heal?.status?.().running;
   }
 
+  function refreshAutoInvisibleStatus() {
+    const autoInvisibleToggle = document.getElementById("minibia-bot-auto-invisible-enabled");
+    if (!autoInvisibleToggle) return;
+
+    autoInvisibleToggle.checked = !!bot.invisible?.status?.().running;
+  }
+
   function refreshAutoAttackStatus() {
     const autoAttackToggle = document.getElementById("minibia-bot-auto-attack-enabled");
     if (!autoAttackToggle) return;
@@ -926,6 +933,13 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
               </div>
               <div class="mb-row">
                 <label class="mb-toggle">
+                  <input type="checkbox" id="minibia-bot-auto-invisible-enabled" />
+                  <span>Auto Invisible</span>
+                </label>
+                <div class="mb-small-note">Casts utana vid whenever invisibility is not active.</div>
+              </div>
+              <div class="mb-row">
+                <label class="mb-toggle">
                   <input type="checkbox" id="minibia-bot-equip-ring-enabled" />
                   <span>Equip Ring</span>
                 </label>
@@ -934,7 +948,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
             </div>
           </div>
           <div class="mb-section mb-column-section">
-            <div class="mb-note">Loaded routines: Panic Runner, magic level trainer, auto eat, equip ring, auto heal, auto attack, and talk.</div>
+            <div class="mb-note">Loaded routines: Panic Runner, magic level trainer, auto eat, auto invisible, equip ring, auto heal, auto attack, and talk.</div>
           </div>
         </div>
         <div class="mb-side-column">
@@ -1067,6 +1081,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     const runeEnabledInput = panel.querySelector("#minibia-bot-rune-enabled");
     const autoEatEnabledInput = panel.querySelector("#minibia-bot-auto-eat-enabled");
     const autoEatHotkeyInput = panel.querySelector("#minibia-bot-auto-eat-hotkey");
+    const autoInvisibleEnabledInput = panel.querySelector("#minibia-bot-auto-invisible-enabled");
     const equipRingEnabledInput = panel.querySelector("#minibia-bot-equip-ring-enabled");
     const autoHealEnabledInput = panel.querySelector("#minibia-bot-auto-heal-enabled");
     const autoHealMinHpInput = panel.querySelector("#minibia-bot-auto-heal-min-hp");
@@ -1237,6 +1252,19 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
         }
 
         refreshAutoEatStatus();
+      });
+    }
+
+    if (autoInvisibleEnabledInput) {
+      autoInvisibleEnabledInput.checked = !!bot.invisible?.status?.().running;
+      autoInvisibleEnabledInput.addEventListener("change", () => {
+        if (autoInvisibleEnabledInput.checked) {
+          bot.invisible.start();
+        } else {
+          bot.invisible.stop();
+        }
+
+        refreshAutoInvisibleStatus();
       });
     }
 
@@ -1544,6 +1572,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     renderTrustedNames();
     refreshRuneStatus();
     refreshAutoHealStatus();
+    refreshAutoInvisibleStatus();
     refreshAutoAttackStatus();
     refreshAutoEatStatus();
     refreshCaveStatus();
@@ -1584,6 +1613,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     refreshXrayStatus,
     refreshRuneStatus,
     refreshAutoHealStatus,
+    refreshAutoInvisibleStatus,
     refreshAutoAttackStatus,
     refreshAutoEatStatus,
     refreshCaveStatus,

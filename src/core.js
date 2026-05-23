@@ -281,6 +281,10 @@ window.__minibiaBotBundle.createBot = function createBot() {
         this.heal.stop({ persistEnabled: false });
       }
 
+      if (this.invisible?.stop) {
+        this.invisible.stop({ persistEnabled: false });
+      }
+
       if (this.attack?.stop) {
         this.attack.stop({ persistEnabled: false });
       }

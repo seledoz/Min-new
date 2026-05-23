@@ -281,6 +281,10 @@ window.__minibiaBotBundle.createBot = function createBot() {
         this.heal.stop({ persistEnabled: false });
       }
 
+      if (this.invisible?.stop) {
+        this.invisible.stop({ persistEnabled: false });
+      }
+
       if (this.attack?.stop) {
         this.attack.stop({ persistEnabled: false });
       }
@@ -2082,6 +2086,222 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
     triggerHpHeal,
     triggerManaHeal,
     normalizeHotbarSlot,
+    config,
+  };
+};
+window.__minibiaBotBundle = window.__minibiaBotBundle || {};
+
+window.__minibiaBotBundle.installAutoInvisibleModule = function installAutoInvisibleModule(bot) {
+  const configStorageKey = "minibiaBot.invisible.config";
+  const INVISIBLE_CONDITION_ID = 4;
+  const state = {
+    running: false,
+    timerId: null,
+    lastCastAt: 0,
+  };
+  let resumeListenersAttached = false;
+
+  const config = Object.assign(
+    {
+      tickMs: 500,
+      spellWords: "utana vid",
+      recastCooldownMs: 2000,
+      enabled: false,
+    },
+    bot.storage.get(configStorageKey, {})
+  );
+  config.tickMs = 500;
+
+  function persistConfig() {
+    bot.storage.set(configStorageKey, { ...config });
+  }
+
+  function getInvisibleConditionId() {
+    return window.ConditionManager?.prototype?.INVISIBLE ?? INVISIBLE_CONDITION_ID;
+  }
+
+  function isInvisibleActive() {
+    const player = window.gameClient?.player;
+    const conditions = player?.conditions;
+    const invisibleConditionId = getInvisibleConditionId();
+
+    if (conditions?.has) {
+      return conditions.has(invisibleConditionId);
+    }
+
+    if (player?.hasCondition) {
+      return player.hasCondition(invisibleConditionId);
+    }
+
+    return false;
+  }
+
+  function getGateStatus(now = Date.now()) {
+    const cooldownRemainingMs = Math.max(0, config.recastCooldownMs - (now - state.lastCastAt));
+    const cooldownReady = cooldownRemainingMs === 0;
+    const invisibleActive = isInvisibleActive();
+
+    return {
+      invisibleActive,
+      cooldownReady,
+      cooldownRemainingMs,
+      canCast: !invisibleActive && cooldownReady,
+    };
+  }
+
+  function canCastInvisible(now = Date.now()) {
+    return getGateStatus(now).canCast;
+  }
+
+  function tryCastInvisible(now = Date.now()) {
+    if (!config.enabled || !canCastInvisible(now)) {
+      return false;
+    }
+
+    const sent = bot.sendChat(config.spellWords);
+    if (sent) {
+      state.lastCastAt = now;
+      bot.log("cast invisible spell", { spellWords: config.spellWords });
+    }
+
+    return sent;
+  }
+
+  function scheduleNextTick() {
+    if (!state.running) return;
+
+    state.timerId = window.setTimeout(() => {
+      tick();
+    }, config.tickMs);
+  }
+
+  function runImmediateTick() {
+    if (!state.running) return;
+
+    if (state.timerId != null) {
+      window.clearTimeout(state.timerId);
+      state.timerId = null;
+    }
+
+    tick();
+  }
+
+  function handleResume() {
+    if (document.hidden) {
+      return;
+    }
+
+    runImmediateTick();
+  }
+
+  function attachResumeListeners() {
+    if (resumeListenersAttached) {
+      return;
+    }
+
+    document.addEventListener("visibilitychange", handleResume);
+    window.addEventListener("focus", handleResume);
+    window.addEventListener("pageshow", handleResume);
+    resumeListenersAttached = true;
+  }
+
+  function detachResumeListeners() {
+    if (!resumeListenersAttached) {
+      return;
+    }
+
+    document.removeEventListener("visibilitychange", handleResume);
+    window.removeEventListener("focus", handleResume);
+    window.removeEventListener("pageshow", handleResume);
+    resumeListenersAttached = false;
+  }
+
+  function tick() {
+    if (!state.running) return;
+
+    try {
+      tryCastInvisible();
+    } catch (error) {
+      bot.log("auto invisible tick failed", error?.message || error);
+    } finally {
+      scheduleNextTick();
+    }
+  }
+
+  function start(overrides = {}) {
+    Object.assign(config, overrides, { enabled: true });
+    config.tickMs = 500;
+    persistConfig();
+
+    if (state.running) {
+      bot.log("auto invisible already running");
+      return false;
+    }
+
+    state.running = true;
+    attachResumeListeners();
+    bot.log("auto invisible started", { ...config });
+    tick();
+    return true;
+  }
+
+  function stop(options = {}) {
+    const shouldPersistEnabled = options.persistEnabled !== false;
+    state.running = false;
+
+    if (state.timerId != null) {
+      window.clearTimeout(state.timerId);
+      state.timerId = null;
+    }
+
+    detachResumeListeners();
+
+    if (shouldPersistEnabled) {
+      config.enabled = false;
+      persistConfig();
+    }
+
+    bot.log("auto invisible stopped");
+    return true;
+  }
+
+  function status() {
+    return {
+      running: state.running,
+      config: { ...config },
+      gates: getGateStatus(),
+      lastCastAt: state.lastCastAt,
+    };
+  }
+
+  function updateConfig(nextConfig = {}) {
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "spellWords")) {
+      nextConfig.spellWords = String(nextConfig.spellWords || "").trim() || config.spellWords;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "recastCooldownMs")) {
+      nextConfig.recastCooldownMs = Math.max(0, Number(nextConfig.recastCooldownMs) || 0);
+    }
+
+    Object.assign(config, nextConfig);
+    config.tickMs = 500;
+    persistConfig();
+    bot.log("auto invisible config updated", { ...config });
+    return { ...config };
+  }
+
+  if (config.enabled) {
+    start();
+  }
+
+  bot.invisible = {
+    start,
+    stop,
+    status,
+    updateConfig,
+    isInvisibleActive,
+    canCastInvisible,
+    tryCastInvisible,
     config,
   };
 };
@@ -5911,6 +6131,13 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     autoHealToggle.checked = !!bot.heal?.status?.().running;
   }
 
+  function refreshAutoInvisibleStatus() {
+    const autoInvisibleToggle = document.getElementById("minibia-bot-auto-invisible-enabled");
+    if (!autoInvisibleToggle) return;
+
+    autoInvisibleToggle.checked = !!bot.invisible?.status?.().running;
+  }
+
   function refreshAutoAttackStatus() {
     const autoAttackToggle = document.getElementById("minibia-bot-auto-attack-enabled");
     if (!autoAttackToggle) return;
@@ -6627,6 +6854,13 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
               </div>
               <div class="mb-row">
                 <label class="mb-toggle">
+                  <input type="checkbox" id="minibia-bot-auto-invisible-enabled" />
+                  <span>Auto Invisible</span>
+                </label>
+                <div class="mb-small-note">Casts utana vid whenever invisibility is not active.</div>
+              </div>
+              <div class="mb-row">
+                <label class="mb-toggle">
                   <input type="checkbox" id="minibia-bot-equip-ring-enabled" />
                   <span>Equip Ring</span>
                 </label>
@@ -6635,7 +6869,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
             </div>
           </div>
           <div class="mb-section mb-column-section">
-            <div class="mb-note">Loaded routines: Panic Runner, magic level trainer, auto eat, equip ring, auto heal, auto attack, and talk.</div>
+            <div class="mb-note">Loaded routines: Panic Runner, magic level trainer, auto eat, auto invisible, equip ring, auto heal, auto attack, and talk.</div>
           </div>
         </div>
         <div class="mb-side-column">
@@ -6768,6 +7002,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     const runeEnabledInput = panel.querySelector("#minibia-bot-rune-enabled");
     const autoEatEnabledInput = panel.querySelector("#minibia-bot-auto-eat-enabled");
     const autoEatHotkeyInput = panel.querySelector("#minibia-bot-auto-eat-hotkey");
+    const autoInvisibleEnabledInput = panel.querySelector("#minibia-bot-auto-invisible-enabled");
     const equipRingEnabledInput = panel.querySelector("#minibia-bot-equip-ring-enabled");
     const autoHealEnabledInput = panel.querySelector("#minibia-bot-auto-heal-enabled");
     const autoHealMinHpInput = panel.querySelector("#minibia-bot-auto-heal-min-hp");
@@ -6938,6 +7173,19 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
         }
 
         refreshAutoEatStatus();
+      });
+    }
+
+    if (autoInvisibleEnabledInput) {
+      autoInvisibleEnabledInput.checked = !!bot.invisible?.status?.().running;
+      autoInvisibleEnabledInput.addEventListener("change", () => {
+        if (autoInvisibleEnabledInput.checked) {
+          bot.invisible.start();
+        } else {
+          bot.invisible.stop();
+        }
+
+        refreshAutoInvisibleStatus();
       });
     }
 
@@ -7245,6 +7493,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     renderTrustedNames();
     refreshRuneStatus();
     refreshAutoHealStatus();
+    refreshAutoInvisibleStatus();
     refreshAutoAttackStatus();
     refreshAutoEatStatus();
     refreshCaveStatus();
@@ -7285,6 +7534,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     refreshXrayStatus,
     refreshRuneStatus,
     refreshAutoHealStatus,
+    refreshAutoInvisibleStatus,
     refreshAutoAttackStatus,
     refreshAutoEatStatus,
     refreshCaveStatus,
@@ -7307,6 +7557,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
   const persistedEnabledModules = [
     ["rune", "minibiaBot.rune.config"],
     ["heal", "minibiaBot.heal.config"],
+    ["invisible", "minibiaBot.invisible.config"],
     ["attack", "minibiaBot.attack.config"],
     ["cave", "minibiaBot.cave.config"],
     ["equipRing", "minibiaBot.equipRing.config"],
@@ -7364,6 +7615,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     currentBundle.installPanicModule(bot);
     currentBundle.installRuneModule(bot);
     currentBundle.installHealModule(bot);
+    currentBundle.installAutoInvisibleModule(bot);
     currentBundle.installAutoAttackModule(bot);
     currentBundle.installCaveModule(bot);
     currentBundle.installEquipRingModule(bot);
@@ -7385,6 +7637,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
       panic: bot.panic.status(),
       rune: bot.rune.status(),
       heal: bot.heal.status(),
+      invisible: bot.invisible.status(),
       attack: bot.attack.status(),
       cave: bot.cave.status(),
       equipRing: bot.equipRing.status(),
@@ -7397,7 +7650,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
 
     console.log("[minibia-bot] ready", {
       version: bot.version,
-      modules: ["pz", "xray", "panic", "rune", "heal", "attack", "cave", "equipRing", "eat", "talk", "ui"],
+      modules: ["pz", "xray", "panic", "rune", "heal", "invisible", "attack", "cave", "equipRing", "eat", "talk", "ui"],
     });
     console.log("minibiaBot.reload()");
     console.log("minibiaBot.xray.status()");
@@ -7409,6 +7662,8 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     console.log("minibiaBot.rune.stop()");
     console.log("minibiaBot.heal.start()");
     console.log("minibiaBot.heal.stop()");
+    console.log("minibiaBot.invisible.start()");
+    console.log("minibiaBot.invisible.stop()");
     console.log("minibiaBot.attack.start()");
     console.log("minibiaBot.attack.stop()");
     console.log("minibiaBot.cave.addWaypointCurrentSpot()");
