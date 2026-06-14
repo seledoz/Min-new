@@ -12,7 +12,7 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "unknown")
 
-sed "s/%%BRANCH%%/$BRANCH/g; s/%%COMMIT%%/$COMMIT/g; s/%%DATE%%/$DATE/g" src/version.js > /tmp/version_processed.js
+sed "s|%%BRANCH%%|$BRANCH|g; s|%%COMMIT%%|$COMMIT|g; s|%%DATE%%|$DATE|g" src/version.js > /tmp/version_processed.js
 
 cat \
   /tmp/version_processed.js \
