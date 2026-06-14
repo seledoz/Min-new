@@ -265,8 +265,16 @@ window.__minibiaBotBundle.createBot = function createBot() {
 
   startReconnectWatcher();
 
+  const raw = window.__minibiaBotBundle.versionInfo || {};
+  const version = Object.freeze({
+    number: raw.number || "0.0.0",
+    branch: raw.branch || "unknown",
+    commit: raw.commit || "unknown",
+    date: raw.date || "unknown",
+  });
+
   return {
-    version: "0.3.0",
+    version,
     addCleanup,
     destroy() {
       if (this.panic?.stop) {

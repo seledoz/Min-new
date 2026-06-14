@@ -32,7 +32,8 @@ This repo now has a simple source layout for browser-loaded Minibia routines, wh
 - [src/modules/heal.js](/home/yuno/minibia-bot/src/modules/heal.js): auto heal loop for hp and mana hotkeys
 - [src/ui/panel.js](/home/yuno/minibia-bot/src/ui/panel.js): draggable in-game panel
 - [src/main.js](/home/yuno/minibia-bot/src/main.js): bundle entrypoint
-- [build.sh](/home/yuno/minibia-bot/build.sh): rebuilds `pz-bot.js` from `src/`
+- [build.sh](/home/yuno/minibia-bot/build.sh): rebuilds `pz-bot.js` from `src/` (injeta branch, commit e data automaticamente)
+- [src/version.js](/home/yuno/minibia-bot/src/version.js): versao do bot (numero, branch, commit, data — preenchido pelo build.sh)
 - [cors_http_server.py](/home/yuno/minibia-bot/cors_http_server.py): local dev server with CORS headers for browser fetches
 
 **Reload In Game**
