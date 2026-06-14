@@ -447,6 +447,12 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
       return false;
     }
 
+    if (!findNearbyMonster(target)) {
+      clearCurrentFollowTarget();
+      clearEngagedTarget();
+      return false;
+    }
+
     const giveUpDelayMs = Math.max(5000, (Number(config.tickMs) || 0) * 10);
 
     if (isAdjacentTile(playerPosition, targetPosition)) {

@@ -4,7 +4,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
    Informacoes de versao — preenchidas pelo build.sh
 
    O script de build (build.sh) substitui os placeholders
-   test/cave-combat-fix, ff52cdc e 2026-06-14T20:13:34Z pelos valores reais
+   test/cave-combat-fix, 3c3d212 e 2026-06-14T20:45:10Z pelos valores reais
    do git no momento da construcao do bundle pz-bot.js.
 
    Para desenvolvimento local sem build, os placeholders
@@ -13,8 +13,8 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 window.__minibiaBotBundle.versionInfo = {
   number: "0.3.0",
   branch: "test/cave-combat-fix",
-  commit: "ff52cdc",
-  date: "2026-06-14T20:13:34Z"
+  commit: "3c3d212",
+  date: "2026-06-14T20:45:10Z"
 };
 window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 
@@ -3202,6 +3202,12 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
       return false;
     }
 
+    if (!findNearbyMonster(target)) {
+      clearCurrentFollowTarget();
+      clearEngagedTarget();
+      return false;
+    }
+
     const giveUpDelayMs = Math.max(5000, (Number(config.tickMs) || 0) * 10);
 
     if (isAdjacentTile(playerPosition, targetPosition)) {
@@ -3543,6 +3549,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     lastObservedPosition: null,
     pendingTransitionSource: null,
     pausedForCombat: false,
+    gracePeriodStart: 0,
   };
   const minimapOverlayState = {
     timerId: null,
@@ -3555,6 +3562,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       waypointTolerance: 0,
       enabled: false,
       activePresetName: defaultPresetName,
+      combatEndGracePeriodMs: 2000,
     },
     bot.storage.get(configStorageKey, {})
   );
@@ -4888,6 +4896,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       if (shouldPauseForCombat) {
         if (!state.pausedForCombat) {
           state.pausedForCombat = true;
+          state.gracePeriodStart = 0;
           bot.log("cave paused for auto attack", {
             combatDurationMs: Number(attackStatus?.combatDurationMs || 0),
             targetCount: Number(attackStatus?.targetCount || 0),
@@ -4897,10 +4906,35 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       }
 
       if (state.pausedForCombat) {
+        if (!state.gracePeriodStart) {
+          state.gracePeriodStart = now;
+        }
+
+        if (now - state.gracePeriodStart < config.combatEndGracePeriodMs) {
+          return;
+        }
+
         state.pausedForCombat = false;
+        state.gracePeriodStart = 0;
+
+        const currentWaypoint = getCurrentWaypoint();
+        if (currentWaypoint && isAtWaypoint(position, currentWaypoint)) {
+          advanceWaypoint();
+        } else if (currentWaypoint) {
+          const nextIndex = state.currentIndex + state.direction;
+          if (nextIndex >= 0 && nextIndex < route.length) {
+            const distToCurrent = getDistanceToWaypoint(position, currentWaypoint);
+            const distToNext = getDistanceToWaypoint(position, route[nextIndex]);
+            if (distToNext < distToCurrent) {
+              state.currentIndex = nextIndex;
+            }
+          }
+        }
+
         bot.log("cave resumed after auto attack", {
           combatDurationMs: Number(attackStatus?.combatDurationMs || 0),
           targetCount: Number(attackStatus?.targetCount || 0),
+          currentIndex: state.currentIndex + 1,
         });
       }
 
@@ -4992,6 +5026,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     state.lastPositionKey = getPositionKey(position);
     state.lastProgressAt = Date.now();
     state.pausedForCombat = false;
+    state.gracePeriodStart = 0;
     bot.log("cave bot started", {
       waypoints: route.length,
       currentIndex: state.currentIndex + 1,
@@ -5016,6 +5051,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       persistConfig();
     }
     state.pausedForCombat = false;
+    state.gracePeriodStart = 0;
     bot.log("cave bot stopped");
     return true;
   }
