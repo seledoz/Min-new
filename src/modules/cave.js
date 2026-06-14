@@ -30,6 +30,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     lastObservedPosition: null,
     pendingTransitionSource: null,
     pausedForCombat: false,
+    gracePeriodStart: 0,
   };
   const minimapOverlayState = {
     timerId: null,
@@ -42,6 +43,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       waypointTolerance: 0,
       enabled: false,
       activePresetName: defaultPresetName,
+      combatEndGracePeriodMs: 2000,
     },
     bot.storage.get(configStorageKey, {})
   );
@@ -1375,6 +1377,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       if (shouldPauseForCombat) {
         if (!state.pausedForCombat) {
           state.pausedForCombat = true;
+          state.gracePeriodStart = 0;
           bot.log("cave paused for auto attack", {
             combatDurationMs: Number(attackStatus?.combatDurationMs || 0),
             targetCount: Number(attackStatus?.targetCount || 0),
@@ -1384,10 +1387,35 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       }
 
       if (state.pausedForCombat) {
+        if (!state.gracePeriodStart) {
+          state.gracePeriodStart = now;
+        }
+
+        if (now - state.gracePeriodStart < config.combatEndGracePeriodMs) {
+          return;
+        }
+
         state.pausedForCombat = false;
+        state.gracePeriodStart = 0;
+
+        const currentWaypoint = getCurrentWaypoint();
+        if (currentWaypoint && isAtWaypoint(position, currentWaypoint)) {
+          advanceWaypoint();
+        } else if (currentWaypoint) {
+          const nextIndex = state.currentIndex + state.direction;
+          if (nextIndex >= 0 && nextIndex < route.length) {
+            const distToCurrent = getDistanceToWaypoint(position, currentWaypoint);
+            const distToNext = getDistanceToWaypoint(position, route[nextIndex]);
+            if (distToNext < distToCurrent) {
+              state.currentIndex = nextIndex;
+            }
+          }
+        }
+
         bot.log("cave resumed after auto attack", {
           combatDurationMs: Number(attackStatus?.combatDurationMs || 0),
           targetCount: Number(attackStatus?.targetCount || 0),
+          currentIndex: state.currentIndex + 1,
         });
       }
 
@@ -1479,6 +1507,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     state.lastPositionKey = getPositionKey(position);
     state.lastProgressAt = Date.now();
     state.pausedForCombat = false;
+    state.gracePeriodStart = 0;
     bot.log("cave bot started", {
       waypoints: route.length,
       currentIndex: state.currentIndex + 1,
@@ -1503,6 +1532,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       persistConfig();
     }
     state.pausedForCombat = false;
+    state.gracePeriodStart = 0;
     bot.log("cave bot stopped");
     return true;
   }
