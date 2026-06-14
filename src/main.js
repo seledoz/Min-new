@@ -137,6 +137,6 @@
 
   window.__minibiaBotReloadBundle = bundle;
   window.minibiaBotReload = () => boot(window.__minibiaBotReloadBundle || bundle);
-  delete window.__minibiaBotBundle;
   boot(bundle);
+  delete window.__minibiaBotBundle;
 })();

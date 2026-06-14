@@ -4,7 +4,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
    Informacoes de versao — preenchidas pelo build.sh
 
    O script de build (build.sh) substitui os placeholders
-   test/cave-combat-fix, 614f339 e 2026-06-14T19:46:19Z pelos valores reais
+   test/cave-combat-fix, ff52cdc e 2026-06-14T20:13:34Z pelos valores reais
    do git no momento da construcao do bundle pz-bot.js.
 
    Para desenvolvimento local sem build, os placeholders
@@ -13,8 +13,8 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 window.__minibiaBotBundle.versionInfo = {
   number: "0.3.0",
   branch: "test/cave-combat-fix",
-  commit: "614f339",
-  date: "2026-06-14T19:46:19Z"
+  commit: "ff52cdc",
+  date: "2026-06-14T20:13:34Z"
 };
 window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 
@@ -8196,6 +8196,6 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
 
   window.__minibiaBotReloadBundle = bundle;
   window.minibiaBotReload = () => boot(window.__minibiaBotReloadBundle || bundle);
-  delete window.__minibiaBotBundle;
   boot(bundle);
+  delete window.__minibiaBotBundle;
 })();
