@@ -1,6 +1,6 @@
 # Minibia Bot
 
-**Versão atual: 0.3.2** — branch `test/cave-combat-fix`
+**Versão atual: 0.3.3** — branch `test/cave-combat-fix`
 
 ## Load From GitHub In Chrome Or Edge
 
