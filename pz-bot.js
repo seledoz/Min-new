@@ -2,7 +2,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 
 window.__minibiaBotBundle.createBot = function createBot() {
   const cleanups = [];
-  const defaultAlarmAudioSrc = "https://upload.wikimedia.org/wikipedia/commons/transcoded/3/3f/ACA_Allertor_125_video.ogv/ACA_Allertor_125_video.ogv.480p.vp9.webm";
+  const defaultAlarmAudioSrc = "https://upload.wikimedia.org/wikipedia/commons/7/7a/"six-seven".ogg";
   const alarmAudioSrcStorageKey = "minibiaBot.audio.alarmSrc";
   const recentSentChats = [];
   const reconnectButtonSelectors = [
