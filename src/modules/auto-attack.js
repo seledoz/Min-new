@@ -234,7 +234,7 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
 
     const followTarget = getCurrentFollowTarget();
     if (followTarget && followTarget.id === state.engagedTargetId) {
-      return followTarget;
+      return findNearbyMonster(followTarget) || followTarget;
     }
 
     const nearbyTarget = findNearbyMonsterById(state.engagedTargetId);

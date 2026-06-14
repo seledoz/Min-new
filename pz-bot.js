@@ -2963,7 +2963,7 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
 
     const followTarget = getCurrentFollowTarget();
     if (followTarget && followTarget.id === state.engagedTargetId) {
-      return followTarget;
+      return findNearbyMonster(followTarget) || followTarget;
     }
 
     const nearbyTarget = findNearbyMonsterById(state.engagedTargetId);
@@ -4857,7 +4857,9 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       const positionKey = getPositionKey(position);
       const now = Date.now();
       const attackStatus = bot.attack?.status?.() || null;
-      const shouldPauseForCombat = !!attackStatus?.combatActive;
+      const shouldPauseForCombat =
+        !!attackStatus?.combatActive &&
+        Number(attackStatus?.combatDurationMs || 0) < 60000;
 
       if (shouldPauseForCombat) {
         if (!state.pausedForCombat) {
