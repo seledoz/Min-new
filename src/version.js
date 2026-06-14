@@ -11,7 +11,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
    permanecem como estao e o codigo usa "unknown" como fallback.
    ============================================================ */
 window.__minibiaBotBundle.versionInfo = {
-  number: "0.3.0",
+  number: "0.3.1",
   branch: "%%BRANCH%%",
   commit: "%%COMMIT%%",
   date: "%%DATE%%"
