@@ -26,7 +26,7 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
       runeHotbarSlot: null,
       targetCooldownMs: 1200,
       runeCooldownMs: 1200,
-      maxTargetDistance: 8,
+      maxTargetDistance: 5,
       meleeMode: true,
       enabled: false,
     },
@@ -326,7 +326,7 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
   }
 
   function shouldGiveUpTarget(target) {
-    const maxTargetDistance = Math.max(1, Number(config.maxTargetDistance) || 8);
+    const maxTargetDistance = Math.max(1, Number(config.maxTargetDistance) || 5);
     const playerPosition = normalizePosition(bot.getPlayerPosition());
     const targetPosition = normalizePosition(target?.getPosition?.() || target?.__position);
     if (!playerPosition || !targetPosition) {
@@ -344,7 +344,7 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
         id: currentTarget.id,
         name: currentTarget.name || "Mob",
         position: normalizePosition(currentTarget.getPosition?.() || currentTarget.__position),
-        maxTargetDistance: Math.max(1, Number(config.maxTargetDistance) || 8),
+        maxTargetDistance: Math.max(1, Number(config.maxTargetDistance) || 5),
       });
       return true;
     }
@@ -356,7 +356,7 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
         id: engagedTarget.id,
         name: engagedTarget.name || "Mob",
         position: normalizePosition(engagedTarget.getPosition?.() || engagedTarget.__position),
-        maxTargetDistance: Math.max(1, Number(config.maxTargetDistance) || 8),
+        maxTargetDistance: Math.max(1, Number(config.maxTargetDistance) || 5),
       });
       return true;
     }
