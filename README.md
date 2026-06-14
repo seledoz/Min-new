@@ -1,5 +1,7 @@
 # Minibia Bot
 
+**Versão atual: 0.3.2** — branch `test/cave-combat-fix`
+
 ## Load From GitHub In Chrome Or Edge
 
 1. Open the game page.
@@ -12,7 +14,7 @@
 6. Paste this and press `Enter`:
 
 ```js
-fetch("https://raw.githubusercontent.com/vinaoooooz/minibia-bot/refs/heads/test/cave-combat-fix/pz-bot.js")
+fetch("https://raw.githubusercontent.com/vinaoooooz/minibia-bot/test/cave-combat-fix/pz-bot.js?t=" + Date.now())
   .then((r) => r.text())
   .then((code) => eval(code));
 ```
