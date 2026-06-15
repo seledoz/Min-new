@@ -648,6 +648,17 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
         cursor: move;
       }
 
+      #minibia-bot-panel .mb-version {
+        font-size: 0.7em;
+        font-weight: 400;
+        opacity: 0.55;
+        margin-left: 6px;
+        text-transform: none;
+        letter-spacing: 0;
+        cursor: default;
+        user-select: text;
+      }
+
       #minibia-bot-panel .mb-titlebar {
         display: flex;
         align-items: center;
@@ -930,7 +941,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     panel.id = "minibia-bot-panel";
     panel.innerHTML = `
         <div class="mb-titlebar">
-        <div class="mb-title">Minibia Bot</div>
+        <div class="mb-title">Minibia Bot <span class="mb-version" title="${bot.version.branch} @ ${bot.version.commit}">v${bot.version.number}</span></div>
         <button type="button" class="mb-icon-button" id="minibia-bot-collapse" aria-label="Minimize panel" title="Minimize">−</button>
       </div>
       <div class="mb-body">
