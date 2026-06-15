@@ -19,6 +19,10 @@ window.__minibiaBotBundle.createBot = function createBot() {
   let reconnectPollTimerId = null;
   let lastReconnectClickAt = 0;
 
+  const MAX_LOG_ENTRIES = 2000;
+  const logBuffer = [];
+  let debugEnabled = false;
+
   function addCleanup(fn) {
     if (typeof fn === "function") {
       cleanups.push(fn);
@@ -321,8 +325,56 @@ window.__minibiaBotBundle.createBot = function createBot() {
       destroyAlarmAudio();
       runCleanups();
     },
+    getLoggerPosition() {
+      try {
+        const pos = window.gameClient?.player?.getPosition?.();
+        if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y) && Number.isFinite(pos.z)) {
+          return { x: Math.trunc(pos.x), y: Math.trunc(pos.y), z: Math.trunc(pos.z) };
+        }
+      } catch (e) {}
+      return null;
+    },
+    pushLogEntry(level, args) {
+      const now = Date.now();
+      const d = new Date(now);
+      const time = d.toLocaleTimeString("pt-BR", { hour12: false }) + "." +
+        String(d.getMilliseconds()).padStart(3, "0");
+      const pos = this.getLoggerPosition();
+      const text = String(args[0] || "");
+      const data = args.length > 1 ? args[1] : null;
+
+      logBuffer.push({ at: now, time, position: pos, text, data, level });
+      if (logBuffer.length > MAX_LOG_ENTRIES) logBuffer.shift();
+
+      const posStr = pos ? `[${pos.x},${pos.y},${pos.z}] ` : "";
+      const label = level === "debug" ? "[DEBUG] " : "";
+      const rest = args.map((a) => typeof a === "object" ? JSON.stringify(a) : String(a)).join(" ");
+      console.log(`[minibia-bot] ${label}${posStr}${rest}`);
+    },
     log(...args) {
-      console.log("[minibia-bot]", ...args);
+      this.pushLogEntry("info", args);
+    },
+    logDebug(...args) {
+      if (!debugEnabled) return;
+      this.pushLogEntry("debug", args);
+    },
+    logger: {
+      getLogs() { return [...logBuffer]; },
+      getDebugEnabled() { return debugEnabled; },
+      setDebugEnabled(enabled) { debugEnabled = !!enabled; },
+      clear() { logBuffer.length = 0; },
+      downloadLogs() {
+        const logs = [...logBuffer];
+        const blob = new Blob([JSON.stringify(logs, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `minibia-bot-logs-${Date.now()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      },
     },
     storage: {
       get(key, fallback = null) {

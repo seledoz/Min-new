@@ -380,6 +380,30 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     equipRingToggle.checked = !!bot.equipRing?.status?.().running;
   }
 
+  function refreshDebugStatus() {
+    const toggle = document.getElementById("minibia-bot-debug-enabled");
+    const countLabel = document.getElementById("minibia-bot-log-count");
+    const downloadButton = document.getElementById("minibia-bot-logs-download");
+    const clearButton = document.getElementById("minibia-bot-logs-clear");
+
+    if (toggle) {
+      toggle.checked = !!bot.logger?.getDebugEnabled?.();
+    }
+
+    if (countLabel) {
+      const logs = bot.logger?.getLogs?.() || [];
+      countLabel.textContent = `${logs.length} logs in memory`;
+    }
+
+    if (downloadButton) {
+      downloadButton.disabled = !bot.logger?.getLogs?.()?.length;
+    }
+
+    if (clearButton) {
+      clearButton.disabled = !bot.logger?.getLogs?.()?.length;
+    }
+  }
+
   function refreshTalkStatus() {
     const talkToggle = document.getElementById("minibia-bot-talk-enabled");
     const statusLabel = document.getElementById("minibia-bot-talk-status");
@@ -875,6 +899,17 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
         font-size: 11px;
       }
 
+      #minibia-bot-panel .mb-debug-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+
+      #minibia-bot-panel .mb-log-count {
+        font-size: 10px;
+        opacity: 0.6;
+      }
+
       @media (max-width: 760px) {
         #minibia-bot-panel {
           width: min(720px, calc(100vw - 32px));
@@ -976,6 +1011,20 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
                   <span>Equip Ring</span>
                 </label>
                 <div></div>
+              </div>
+            </div>
+          </div>
+          <div class="mb-section mb-column-section">
+            <div class="mb-label">Debug</div>
+            <div class="mb-stack">
+              <label class="mb-toggle">
+                <input type="checkbox" id="minibia-bot-debug-enabled" />
+                <span>Debug Mode</span>
+              </label>
+              <div class="mb-small-note mb-log-count" id="minibia-bot-log-count">0 logs in memory</div>
+              <div class="mb-debug-actions">
+                <button type="button" class="mb-small-button" id="minibia-bot-logs-download" disabled>Download Logs</button>
+                <button type="button" class="mb-small-button" id="minibia-bot-logs-clear" disabled>Clear Logs</button>
               </div>
             </div>
           </div>
@@ -1154,6 +1203,9 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     const cavePresetNewButton = panel.querySelector("#minibia-bot-cave-preset-new");
     const cavePresetDeleteButton = panel.querySelector("#minibia-bot-cave-preset-delete");
     const cavePathfinderModeSelect = panel.querySelector("#minibia-bot-cave-pathfinder-mode");
+    const debugEnabledInput = panel.querySelector("#minibia-bot-debug-enabled");
+    const debugLogsDownloadButton = panel.querySelector("#minibia-bot-logs-download");
+    const debugLogsClearButton = panel.querySelector("#minibia-bot-logs-clear");
 
     if (collapseButton) {
       collapseButton.addEventListener("click", () => {
@@ -1438,6 +1490,29 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
       });
     }
 
+    if (debugEnabledInput) {
+      debugEnabledInput.addEventListener("change", () => {
+        bot.logger.setDebugEnabled(debugEnabledInput.checked);
+        if (debugEnabledInput.checked) {
+          bot.log("debug mode enabled");
+        }
+        refreshDebugStatus();
+      });
+    }
+
+    if (debugLogsDownloadButton) {
+      debugLogsDownloadButton.addEventListener("click", () => {
+        bot.logger.downloadLogs();
+      });
+    }
+
+    if (debugLogsClearButton) {
+      debugLogsClearButton.addEventListener("click", () => {
+        bot.logger.clear();
+        refreshDebugStatus();
+      });
+    }
+
     if (autoHealMinHpInput) {
       autoHealMinHpInput.value = String(bot.heal?.config?.minHp ?? 0);
       autoHealMinHpInput.addEventListener("change", () => {
@@ -1655,6 +1730,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     refreshCaveClosestStatus();
     refreshCaveTransitionStatus();
     refreshCavePathfinderMode();
+    refreshDebugStatus();
 
     const visibleCreaturesTimerId = window.setInterval(refreshVisibleCreatures, 1000);
     bot.addCleanup(() => {
@@ -1672,6 +1748,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
       refreshCaveClosestStatus();
       refreshCaveTransitionStatus();
       refreshCavePathfinderMode();
+      refreshDebugStatus();
     }, 1000);
     bot.addCleanup(() => {
       window.clearInterval(caveStatusTimerId);
