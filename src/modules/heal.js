@@ -11,13 +11,15 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
     lastManaAttemptAt: 0,
     pendingHpAttempt: null,
     pendingManaAttempt: null,
+    hpFailCount: 0,
+    manaFailCount: 0,
   };
 
   const config = Object.assign(
     {
       tickMs: 50,
       healCooldownMs: 1200,
-      healRetryMs: 200,
+      healRetryMs: 400,
       healConfirmMs: 250,
       minHp: 250,
       hpHotbarSlot: 1,
@@ -95,10 +97,12 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
       if (didHpHealSucceed(stats, hpAttempt)) {
         state.lastHpHealAt = hpAttempt.attemptedAt;
         state.pendingHpAttempt = null;
+        state.hpFailCount = 0;
         bot.log("confirmed hp heal", { slot: hpAttempt.slot });
       } else if (now - hpAttempt.attemptedAt >= Math.max(50, Number(config.healConfirmMs) || 0)) {
         state.pendingHpAttempt = null;
-        bot.log("hp heal did not register", { slot: hpAttempt.slot });
+        state.hpFailCount = (state.hpFailCount || 0) + 1;
+        bot.log("hp heal did not register", { slot: hpAttempt.slot, failCount: state.hpFailCount });
       }
     }
 
@@ -107,10 +111,12 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
       if (didManaHealSucceed(stats, manaAttempt)) {
         state.lastManaHealAt = manaAttempt.attemptedAt;
         state.pendingManaAttempt = null;
+        state.manaFailCount = 0;
         bot.log("confirmed mana heal", { slot: manaAttempt.slot });
       } else if (now - manaAttempt.attemptedAt >= Math.max(50, Number(config.healConfirmMs) || 0)) {
         state.pendingManaAttempt = null;
-        bot.log("mana heal did not register", { slot: manaAttempt.slot });
+        state.manaFailCount = (state.manaFailCount || 0) + 1;
+        bot.log("mana heal did not register", { slot: manaAttempt.slot, failCount: state.manaFailCount });
       }
     }
   }
@@ -124,7 +130,8 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
       hp.current > 0 &&
       hp.current <= Math.max(0, Number(config.minHp) || 0) &&
       now - state.lastHpHealAt >= config.healCooldownMs &&
-      now - state.lastHpAttemptAt >= Math.max(50, Number(config.healRetryMs) || 0)
+      now - state.lastHpAttemptAt >= Math.max(50, Number(config.healRetryMs) || 0) &&
+      (state.hpFailCount || 0) < 3
     );
   }
 
@@ -136,7 +143,8 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
     return (
       mana.current <= Math.max(0, Number(config.minMana) || 0) &&
       now - state.lastManaHealAt >= config.healCooldownMs &&
-      now - state.lastManaAttemptAt >= Math.max(50, Number(config.healRetryMs) || 0)
+      now - state.lastManaAttemptAt >= Math.max(50, Number(config.healRetryMs) || 0) &&
+      (state.manaFailCount || 0) < 3
     );
   }
 
