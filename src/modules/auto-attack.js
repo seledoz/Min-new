@@ -26,7 +26,7 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
       runeHotbarSlot: null,
       targetCooldownMs: 1200,
       runeCooldownMs: 1200,
-      maxTargetDistance: 8,
+      maxTargetDistance: 5,
       meleeMode: true,
       enabled: false,
     },
@@ -326,7 +326,7 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
   }
 
   function shouldGiveUpTarget(target) {
-    const maxTargetDistance = Math.max(1, Number(config.maxTargetDistance) || 8);
+    const maxTargetDistance = Math.max(1, Number(config.maxTargetDistance) || 5);
     const playerPosition = normalizePosition(bot.getPlayerPosition());
     const targetPosition = normalizePosition(target?.getPosition?.() || target?.__position);
     if (!playerPosition || !targetPosition) {
@@ -344,7 +344,7 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
         id: currentTarget.id,
         name: currentTarget.name || "Mob",
         position: normalizePosition(currentTarget.getPosition?.() || currentTarget.__position),
-        maxTargetDistance: Math.max(1, Number(config.maxTargetDistance) || 8),
+        maxTargetDistance: Math.max(1, Number(config.maxTargetDistance) || 5),
       });
       return true;
     }
@@ -356,7 +356,7 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
         id: engagedTarget.id,
         name: engagedTarget.name || "Mob",
         position: normalizePosition(engagedTarget.getPosition?.() || engagedTarget.__position),
-        maxTargetDistance: Math.max(1, Number(config.maxTargetDistance) || 8),
+        maxTargetDistance: Math.max(1, Number(config.maxTargetDistance) || 5),
       });
       return true;
     }
@@ -444,6 +444,22 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
     const playerPosition = normalizePosition(bot.getPlayerPosition());
     const targetPosition = normalizePosition(target.getPosition?.() || target.__position);
     if (!playerPosition || !targetPosition || playerPosition.z !== targetPosition.z) {
+      bot.logDebug("auto attack chase target on different floor", {
+        targetId: target.id,
+        targetName: target.name || "Mob",
+        playerZ: playerPosition?.z,
+        targetZ: targetPosition?.z,
+      });
+      return false;
+    }
+
+    if (!findNearbyMonster(target)) {
+      bot.logDebug("auto attack chase target no longer nearby", {
+        targetId: target.id,
+        targetName: target.name || "Mob",
+      });
+      clearCurrentFollowTarget();
+      clearEngagedTarget();
       return false;
     }
 
@@ -460,6 +476,12 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
     if (!adjacentPosition) {
       if (!state.lastFollowStallAt) {
         state.lastFollowStallAt = now;
+        bot.logDebug("auto attack chase no adjacent tile", {
+          targetId: target.id,
+          targetName: target.name || "Mob",
+          targetPos: targetPosition,
+          playerPos: playerPosition,
+        });
         return false;
       }
 
@@ -490,6 +512,7 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
         id: target.id,
         name: target.name || "Mob",
         followTargetId: target.id,
+        distance: currentDistance,
       });
     }
 
@@ -598,7 +621,10 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
     }
 
     const now = Date.now();
+    const playerPos = normalizePosition(bot.getPlayerPosition());
+
     if (resetTargetIfTooFar()) {
+      bot.logDebug("auto attack no valid targets near enough");
       return true;
     }
 
@@ -613,13 +639,23 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
       if (chased) {
         return triggerAttack(now) || true;
       }
+
+      bot.logDebug("auto attack melee no target", { position: playerPos });
     }
 
     if (getCurrentTarget()) {
       return triggerRune(now);
     }
 
-    return triggerAttack(now);
+    const nearbyCount = getNearbyMonsters().length;
+    const attacked = triggerAttack(now);
+    bot.logDebug("auto attack trigger", {
+      attacked,
+      nearbyMonsters: nearbyCount,
+      hasCurrentTarget: !!getCurrentTarget(),
+      position: playerPos,
+    });
+    return attacked;
   }
 
   function scheduleNextTick() {
@@ -636,7 +672,15 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
     try {
       tryAttack();
     } catch (error) {
-      bot.log("auto attack tick failed", error?.message || error);
+      const playerPos = normalizePosition(bot.getPlayerPosition());
+      const combatStatus = bot.attack?.status?.() || {};
+      bot.log("auto attack tick failed", {
+        position: playerPos,
+        error: error?.message || error,
+        combatDurationMs: combatStatus.combatDurationMs,
+        targetCount: combatStatus.targetCount,
+        meleeMode: config.meleeMode,
+      });
     } finally {
       scheduleNextTick();
     }

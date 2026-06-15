@@ -77,7 +77,9 @@
     bot.stop = (...args) => bot.rune.stop(...args);
     bot.reload = () => window.minibiaBotReload?.();
     bot.status = () => ({
-      version: bot.version,
+      version: bot.version.number,
+      branch: bot.version.branch,
+      commit: bot.version.commit,
       pz: {
         home: bot.pz.getHomePz(),
       },
@@ -98,7 +100,10 @@
     window.pzBot = bot.pz;
 
     console.log("[minibia-bot] ready", {
-      version: bot.version,
+      version: bot.version.number,
+      branch: bot.version.branch,
+      commit: bot.version.commit,
+      buildDate: bot.version.date,
       modules: ["pz", "xray", "panic", "rune", "heal", "invisible", "magicShield", "attack", "cave", "equipRing", "eat", "talk", "ui"],
     });
     console.log("minibiaBot.reload()");
@@ -132,6 +137,6 @@
 
   window.__minibiaBotReloadBundle = bundle;
   window.minibiaBotReload = () => boot(window.__minibiaBotReloadBundle || bundle);
-  delete window.__minibiaBotBundle;
   boot(bundle);
+  delete window.__minibiaBotBundle;
 })();
