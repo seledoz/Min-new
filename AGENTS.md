@@ -21,4 +21,4 @@
 
 ## Branch
 
-- A branch atual de trabalho e `test/cave-combat-fix`.
+- A branch atual de trabalho e `features/fecras-path`.

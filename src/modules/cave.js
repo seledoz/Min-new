@@ -30,7 +30,6 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     lastObservedPosition: null,
     pendingTransitionSource: null,
     pausedForCombat: false,
-    gracePeriodStart: 0,
   };
   const minimapOverlayState = {
     timerId: null,
@@ -43,7 +42,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       waypointTolerance: 0,
       enabled: false,
       activePresetName: defaultPresetName,
-      combatEndGracePeriodMs: 2000,
+      pathfinderMode: 'game',
     },
     bot.storage.get(configStorageKey, {})
   );
@@ -222,6 +221,296 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       y: Math.trunc(y),
       z: Math.trunc(z),
     };
+  }
+
+  // --- A* Pathfinder (from cave-navigation.js) ---
+
+  const PATHFINDER_CONFIG = {
+    pathCacheTTL: 5000,
+    matrixCacheTTL: 1000,
+  };
+
+  const pathCache = new Map();
+  const matrixCache = new Map();
+
+  function findBestIndex(openSet) {
+    let bestIndex = 0;
+    let bestF = openSet[0].f;
+    for (let i = 1; i < openSet.length; i++) {
+      if (openSet[i].f < bestF) {
+        bestF = openSet[i].f;
+        bestIndex = i;
+      }
+    }
+    return bestIndex;
+  }
+
+  function aStarPath(start, goal, getWalkable, getNeighbors) {
+    const startZ = start.z;
+    const openSet = [{ x: start.x, y: start.y, z: startZ, f: 0, g: 0, h: 0, parent: null }];
+    const closedSet = new Set();
+    const key = (p) => `${p.x},${p.y}`;
+
+    while (openSet.length > 0) {
+      const bestIndex = findBestIndex(openSet);
+      const current = openSet[bestIndex];
+      openSet[bestIndex] = openSet[openSet.length - 1];
+      openSet.pop();
+      const currentKey = key(current);
+
+      if (current.x === goal.x && current.y === goal.y) {
+        const path = [];
+        let node = current;
+        while (node) {
+          path.unshift({ x: node.x, y: node.y, z: node.z });
+          node = node.parent;
+        }
+        return path;
+      }
+
+      closedSet.add(currentKey);
+
+      for (const neighbor of getNeighbors(current)) {
+        const nKey = key(neighbor);
+        if (closedSet.has(nKey)) continue;
+        if (!getWalkable(neighbor.x, neighbor.y)) continue;
+
+        const g = current.g + 1;
+        const h = Math.abs(neighbor.x - goal.x) + Math.abs(neighbor.y - goal.y);
+        const f = g + h;
+
+        const existing = openSet.find(n => n.x === neighbor.x && n.y === neighbor.y);
+        if (existing) {
+          if (g < existing.g) {
+            existing.g = g;
+            existing.f = f;
+            existing.parent = current;
+          }
+        } else {
+          openSet.push({ x: neighbor.x, y: neighbor.y, z: startZ, f, g, h, parent: current });
+        }
+      }
+    }
+    return null;
+  }
+
+  function getAStarWalkabilityMatrix(position, z) {
+    const cacheKey = `matrix_${z}`;
+    const cached = matrixCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < PATHFINDER_CONFIG.matrixCacheTTL) {
+      return cached.matrix;
+    }
+
+    const chunks = window.gameClient?.world?.chunks || [];
+    const matrix = new Map();
+    try {
+      for (const chunk of chunks) {
+        if (!chunk?.tiles) continue;
+        for (const tile of chunk.tiles) {
+          if (!tile?.__position || tile.__position.z !== z) continue;
+          const key = `${tile.__position.x},${tile.__position.y}`;
+          matrix.set(key, tile.isWalkable ? tile.isWalkable() : false);
+        }
+      }
+    } catch (e) {
+      return matrix;
+    }
+
+    matrixCache.set(cacheKey, { matrix, at: Date.now() });
+    return matrix;
+  }
+
+  function getAStarNeighbors(current, matrix) {
+    const dirs = [
+      { x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 },
+      { x: -1, y: -1 }, { x: 1, y: -1 }, { x: -1, y: 1 }, { x: 1, y: 1 },
+    ];
+    return dirs.map(d => ({ x: current.x + d.x, y: current.y + d.y }))
+      .filter(n => matrix.get(`${n.x},${n.y}`) === true);
+  }
+
+  function getCachedPath(from, to) {
+    const key = `${from.x},${from.y},${from.z}-${to.x},${to.y},${to.z}`;
+    const entry = pathCache.get(key);
+    if (entry && Date.now() - entry.at < PATHFINDER_CONFIG.pathCacheTTL) {
+      return entry.path;
+    }
+    return null;
+  }
+
+  function setCachedPath(from, to, path) {
+    const key = `${from.x},${from.y},${from.z}-${to.x},${to.y},${to.z}`;
+    pathCache.set(key, { path, at: Date.now() });
+  }
+
+  function findPathAStar(from, to) {
+    from = normalizePosition(from);
+    to = normalizePosition(to);
+    if (!from || !to) return null;
+    if (from.x === to.x && from.y === to.y && from.z === to.z) return [];
+    if (from.z !== to.z) return null;
+
+    const cached = getCachedPath(from, to);
+    if (cached) return cached;
+
+    const matrix = getAStarWalkabilityMatrix(from, from.z);
+    const path = aStarPath(from, to,
+      (x, y) => matrix.get(`${x},${y}`) === true,
+      (node) => getAStarNeighbors(node, matrix)
+    );
+
+    if (path) setCachedPath(from, to, path);
+    return path;
+  }
+
+  function cleanupPathCache() {
+    const now = Date.now();
+    for (const [key, entry] of pathCache) {
+      if (now - entry.at >= PATHFINDER_CONFIG.pathCacheTTL) {
+        pathCache.delete(key);
+      }
+    }
+    for (const [key, entry] of matrixCache) {
+      if (now - entry.at >= PATHFINDER_CONFIG.matrixCacheTTL) {
+        matrixCache.delete(key);
+      }
+    }
+  }
+
+  // --- Anti-Stuck System ---
+
+  const MAX_STUCK_COUNT = 3;
+  const stuckCounts = new Map();
+
+  function antiStuckFallback(tile) {
+    const key = `${tile.x},${tile.y}`;
+    const count = (stuckCounts.get(key) || 0) + 1;
+    stuckCounts.set(key, count);
+
+    if (count >= MAX_STUCK_COUNT) return { action: 'skip_waypoint' };
+    return { action: 'repath' };
+  }
+
+  function resetStuckCounts(key) {
+    if (key) {
+      stuckCounts.delete(key);
+    } else {
+      stuckCounts.clear();
+    }
+  }
+
+  // --- Combat Chase ---
+
+  const chaseState = {
+    targetId: null,
+    startedAt: 0,
+    lastDistance: Infinity,
+    stallCount: 0,
+  };
+
+  const CHASE_TIMEOUT_MS = 15000;
+  const CHASE_MAX_STALL = 5;
+  const CHASE_MAX_DISTANCE = 8;
+
+  function findAdjacentWalkablePositionForCave(targetPosition, playerPosition) {
+    if (!targetPosition || !playerPosition) return null;
+
+    const offsets = [
+      { x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 },
+      { x: -1, y: -1 }, { x: 1, y: -1 }, { x: -1, y: 1 }, { x: 1, y: 1 },
+    ];
+
+    offsets.sort((a, b) => {
+      const da = Math.abs(targetPosition.x + a.x - playerPosition.x) +
+        Math.abs(targetPosition.y + a.y - playerPosition.y);
+      const db = Math.abs(targetPosition.x + b.x - playerPosition.x) +
+        Math.abs(targetPosition.y + b.y - playerPosition.y);
+      return da - db;
+    });
+
+    for (const offset of offsets) {
+      const position = new Position(
+        targetPosition.x + offset.x,
+        targetPosition.y + offset.y,
+        targetPosition.z
+      );
+      const tile = window.gameClient?.world?.getTileFromWorldPosition?.(position);
+      if (tile?.isWalkable?.()) {
+        return normalizePosition(position);
+      }
+    }
+    return null;
+  }
+
+  function chaseTarget(target) {
+    if (!target) return false;
+
+    const now = Date.now();
+    const playerPos = normalizePosition(bot.getPlayerPosition());
+    const targetPos = normalizePosition(target.getPosition?.() || target.__position);
+    if (!playerPos || !targetPos || playerPos.z !== targetPos.z) return false;
+
+    if (!isOnScreen(targetPos, playerPos)) return giveUpChase(target, 'offscreen');
+
+    const distance = Math.abs(playerPos.x - targetPos.x) + Math.abs(playerPos.y - targetPos.y);
+    if (distance > CHASE_MAX_DISTANCE) return giveUpChase(target, 'too far');
+
+    if (chaseState.targetId !== target.id) {
+      chaseState.targetId = target.id;
+      chaseState.startedAt = now;
+      chaseState.lastDistance = distance;
+      chaseState.stallCount = 0;
+    }
+
+    if (now - chaseState.startedAt > CHASE_TIMEOUT_MS) {
+      return giveUpChase(target, 'timeout');
+    }
+
+    if (distance >= chaseState.lastDistance) {
+      chaseState.stallCount++;
+      if (chaseState.stallCount > CHASE_MAX_STALL) {
+        return giveUpChase(target, 'stalled');
+      }
+    } else {
+      chaseState.stallCount = 0;
+    }
+    chaseState.lastDistance = distance;
+
+    const adjacent = findAdjacentWalkablePositionForCave(targetPos, playerPos);
+    if (!adjacent) return giveUpChase(target, 'no walkable adjacent');
+
+    const to = new Position(adjacent.x, adjacent.y, playerPos.z);
+    try {
+      window.gameClient?.world?.pathfinder?.findPath?.(playerPos, to);
+      return true;
+    } catch (e) {
+      return giveUpChase(target, 'pathfind error');
+    }
+  }
+
+  function giveUpChase(target, reason) {
+    chaseState.targetId = null;
+    bot.log("cave gave up chase", { targetId: target?.id, reason });
+    return false;
+  }
+
+  // --- Viewport Filtering ---
+
+  const VIEWPORT_DX = 8;
+  const VIEWPORT_DY = 6;
+
+  function isOnScreen(pos, playerPos) {
+    if (!pos || !playerPos) return false;
+    return Math.abs(pos.x - playerPos.x) <= VIEWPORT_DX &&
+      Math.abs(pos.y - playerPos.y) <= VIEWPORT_DY &&
+      pos.z === playerPos.z;
+  }
+
+  function filterPathToViewport(path, playerPos) {
+    if (!path || !path.length) return path;
+    const onScreen = path.filter(p => isOnScreen(p, playerPos));
+    if (onScreen.length > 0) return onScreen;
+    return null;
   }
 
   function normalizeWaypoint(waypoint) {
@@ -976,15 +1265,51 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
 
   function goToWaypoint(waypoint) {
     const from = bot.getPlayerPosition();
-    if (!from || !waypoint) {
-      return false;
+    if (!from || !waypoint) return false;
+
+    const now = Date.now();
+
+    if (config.pathfinderMode === 'astar') {
+      const path = findPathAStar(normalizePosition(from), normalizePosition(waypoint));
+      if (!path || path.length === 0) {
+        bot.log("cave A* pathfinding failed", { ...waypoint });
+        return false;
+      }
+
+      const playerPos = normalizePosition(from);
+      const visiblePath = filterPathToViewport(path, playerPos);
+      if (!visiblePath) {
+        bot.log("cave A* path offscreen", { ...waypoint });
+        return false;
+      }
+
+      const nextTile = visiblePath.find(p =>
+        !(p.x === playerPos.x && p.y === playerPos.y)
+      );
+      if (!nextTile) return false;
+
+      const to = new Position(nextTile.x, nextTile.y, playerPos.z);
+      try {
+        window.gameClient?.world?.pathfinder?.findPath?.(normalizePosition(from), to);
+        state.lastPathAt = now;
+        bot.log("cave A* pathing to waypoint", {
+          ...waypoint,
+          index: state.currentIndex + 1,
+          total: route.length,
+          pathLength: visiblePath.length,
+        });
+        return true;
+      } catch (error) {
+        bot.log("cave A* pathing failed", { ...waypoint, error: error?.message || error });
+        return false;
+      }
     }
 
+    // Default: game pathfinder
     const to = new Position(waypoint.x, waypoint.y, waypoint.z);
-
     try {
       window.gameClient?.world?.pathfinder?.findPath?.(from, to);
-      state.lastPathAt = Date.now();
+      state.lastPathAt = now;
       bot.log("cave pathing to waypoint", {
         ...waypoint,
         index: state.currentIndex + 1,
@@ -1362,6 +1687,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
 
     try {
       observePosition();
+      cleanupPathCache();
 
       if (!route.length) {
         stop();
@@ -1372,56 +1698,44 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       const positionKey = getPositionKey(position);
       const now = Date.now();
       const attackStatus = bot.attack?.status?.() || null;
-      const shouldPauseForCombat = !!attackStatus?.combatActive;
+      const shouldPauseForCombat =
+        !!attackStatus?.combatActive &&
+        Number(attackStatus?.combatDurationMs || 0) < 60000;
 
       if (shouldPauseForCombat) {
         if (!state.pausedForCombat) {
           state.pausedForCombat = true;
-          state.gracePeriodStart = 0;
+          resetStuckCounts();
           bot.log("cave paused for auto attack", {
             combatDurationMs: Number(attackStatus?.combatDurationMs || 0),
             targetCount: Number(attackStatus?.targetCount || 0),
           });
         }
+
+        // In astar mode, chase target during combat
+        if (config.pathfinderMode === 'astar') {
+          const target = bot.attack?.getCurrentTarget?.() || null;
+          if (target) {
+            chaseTarget(target);
+          }
+        }
+
         return;
       }
 
       if (state.pausedForCombat) {
-        if (!state.gracePeriodStart) {
-          state.gracePeriodStart = now;
-        }
-
-        if (now - state.gracePeriodStart < config.combatEndGracePeriodMs) {
-          return;
-        }
-
         state.pausedForCombat = false;
-        state.gracePeriodStart = 0;
-
-        const currentWaypoint = getCurrentWaypoint();
-        if (currentWaypoint && isAtWaypoint(position, currentWaypoint)) {
-          advanceWaypoint();
-        } else if (currentWaypoint) {
-          const nextIndex = state.currentIndex + state.direction;
-          if (nextIndex >= 0 && nextIndex < route.length) {
-            const distToCurrent = getDistanceToWaypoint(position, currentWaypoint);
-            const distToNext = getDistanceToWaypoint(position, route[nextIndex]);
-            if (distToNext < distToCurrent) {
-              state.currentIndex = nextIndex;
-            }
-          }
-        }
-
+        resetStuckCounts();
         bot.log("cave resumed after auto attack", {
           combatDurationMs: Number(attackStatus?.combatDurationMs || 0),
           targetCount: Number(attackStatus?.targetCount || 0),
-          currentIndex: state.currentIndex + 1,
         });
       }
 
       if (positionKey && positionKey !== state.lastPositionKey) {
         state.lastPositionKey = positionKey;
         state.lastProgressAt = now;
+        resetStuckCounts();
       }
 
       let waypoint = getCurrentWaypoint();
@@ -1434,13 +1748,35 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
         waypoint = advanceWaypoint();
       }
 
-      if (!waypoint) {
-        return;
-      }
+      if (!waypoint) return;
 
       if (position && waypoint.z !== position.z) {
         handleFloorChange(waypoint, now);
         return;
+      }
+
+      // Anti-stuck: detect if stuck at the same position for too long
+      const timeSinceProgress = now - (state.lastProgressAt || now);
+      const isStuck = timeSinceProgress >= 5000 &&
+        state.lastPositionKey === positionKey &&
+        positionKey != null;
+
+      if (isStuck && config.pathfinderMode === 'astar') {
+        const fallback = antiStuckFallback(waypoint);
+        bot.log("cave anti-stuck triggered", {
+          action: fallback.action,
+          waypoint,
+          stuckForMs: timeSinceProgress,
+        });
+
+        if (fallback.action === 'skip_waypoint') {
+          resetStuckCounts(`${waypoint.x},${waypoint.y}`);
+          advanceWaypoint();
+          return;
+        }
+        if (fallback.action === 'repath') {
+          resetStuckCounts(`${waypoint.x},${waypoint.y}`);
+        }
       }
 
       const shouldRepath =
@@ -1507,7 +1843,6 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     state.lastPositionKey = getPositionKey(position);
     state.lastProgressAt = Date.now();
     state.pausedForCombat = false;
-    state.gracePeriodStart = 0;
     bot.log("cave bot started", {
       waypoints: route.length,
       currentIndex: state.currentIndex + 1,
@@ -1532,7 +1867,6 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       persistConfig();
     }
     state.pausedForCombat = false;
-    state.gracePeriodStart = 0;
     bot.log("cave bot stopped");
     return true;
   }
@@ -1651,6 +1985,11 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
 
   startObserver();
   bot.addCleanup(stopObserver);
+  bot.addCleanup(function () {
+    resetStuckCounts();
+    pathCache.clear();
+    matrixCache.clear();
+  });
   startMinimapOverlay();
   bot.addCleanup(stopMinimapOverlay);
 

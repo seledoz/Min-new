@@ -1,6 +1,6 @@
 # Minibia Bot
 
-**Versão atual: 0.3.3** — branch `test/cave-combat-fix`
+**Versão atual: 0.4.0** — branch `features/fecras-path`
 
 ## Load From GitHub In Chrome Or Edge
 
@@ -14,7 +14,7 @@
 6. Paste this and press `Enter`:
 
 ```js
-fetch("https://raw.githubusercontent.com/vinaoooooz/minibia-bot/test/cave-combat-fix/pz-bot.js?t=" + Date.now())
+fetch("https://raw.githubusercontent.com/vinaoooooz/minibia-bot/features/fecras-path/pz-bot.js?t=" + Date.now())
   .then((r) => r.text())
   .then((code) => eval(code));
 ```
