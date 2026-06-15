@@ -30,6 +30,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     lastObservedPosition: null,
     pendingTransitionSource: null,
     pausedForCombat: false,
+    savedPathState: null,
     tickCount: 0,
   };
   const minimapOverlayState = {
@@ -39,7 +40,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
   const config = Object.assign(
     {
       tickMs: 500,
-      repathMs: 1500,
+      repathMs: 3000,
       waypointTolerance: 0,
       enabled: false,
       activePresetName: defaultPresetName,
@@ -494,6 +495,9 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
   function giveUpChase(target, reason) {
     chaseState.targetId = null;
     bot.log("cave gave up chase", { targetId: target?.id, reason });
+    if (target && bot.attack?.skipTarget) {
+      bot.attack.skipTarget(target, 'cave chase: ' + reason, Date.now(), 5000);
+    }
     return false;
   }
 
@@ -1284,6 +1288,25 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       const path = findPathAStar(fromPos, waypointPos);
 
       if (path && path.length > 0) {
+        if (path.length <= 3) {
+          const to = new Position(waypoint.x, waypoint.y, waypoint.z);
+          try {
+            window.gameClient?.world?.pathfinder?.findPath?.(from, to);
+            state.lastPathAt = now;
+            bot.log("cave A* short path, using game pathfinder", {
+              ...waypoint,
+              index: state.currentIndex + 1,
+              total: route.length,
+              pathLength: path.length,
+            });
+            return true;
+          } catch (error) {
+            bot.log("cave A* short path fallback failed", {
+              ...waypoint, error: error?.message || error,
+            });
+          }
+        }
+
         const playerPos = fromPos;
         const waypointOnScreen = waypointPos && isOnScreen(waypointPos, playerPos);
         let targetTile = null;
@@ -1629,22 +1652,8 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       return false;
     }
 
-    const visibleCandidate = findNearbyTransitionTile(position, waypoint);
-    if (visibleCandidate) {
-      const moved = useFloorChangeTile(visibleCandidate, waypoint, now);
-      if (moved) {
-        bot.log("cave probing visible floor-change tile", {
-          tileX: visibleCandidate.position.x,
-          tileY: visibleCandidate.position.y,
-          tileZ: visibleCandidate.position.z,
-          targetZ: waypoint.z,
-        });
-        return true;
-      }
-    }
-
     const knownTransition = findBestKnownTransition(position, waypoint);
-    if (knownTransition) {
+    if (knownTransition && knownTransition.count >= 2) {
       const target = {
         tile: getTileAt(knownTransition.from),
         position: knownTransition.from,
@@ -1665,6 +1674,37 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
         waypoint,
       });
     }
+
+    const visibleCandidate = findNearbyTransitionTile(position, waypoint);
+    if (visibleCandidate) {
+      const moved = useFloorChangeTile(visibleCandidate, waypoint, now);
+      if (moved) {
+        bot.log("cave probing visible floor-change tile", {
+          tileX: visibleCandidate.position.x,
+          tileY: visibleCandidate.position.y,
+          tileZ: visibleCandidate.position.z,
+          targetZ: waypoint.z,
+        });
+        return true;
+      }
+    }
+
+    if (knownTransition) {
+      const target = {
+        tile: getTileAt(knownTransition.from),
+        position: knownTransition.from,
+      };
+      const moved = useFloorChangeTile(target, waypoint, now);
+      if (moved) {
+        bot.log("cave using learned floor transition (single use)", {
+          from: knownTransition.from,
+          to: knownTransition.to,
+          waypoint,
+        });
+        return true;
+      }
+    }
+
     return false;
   }
 
@@ -1727,7 +1767,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       state.tickCount += 1;
 
       // Periodic debug summary every 5 ticks
-      if (state.tickCount % 5 === 0) {
+      if (state.tickCount % 15 === 0) {
         const waypoint = getCurrentWaypoint();
         const dist = waypoint && position ? getDistanceToWaypoint(position, waypoint) : null;
         bot.logDebug("cave tick summary", {
@@ -1751,6 +1791,11 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       if (shouldPauseForCombat) {
         if (!state.pausedForCombat) {
           state.pausedForCombat = true;
+          state.savedPathState = {
+            waypoint: getCurrentWaypoint(),
+            index: state.currentIndex,
+            direction: state.direction,
+          };
           resetStuckCounts();
           bot.log("cave paused for auto attack", {
             combatDurationMs: Number(attackStatus?.combatDurationMs || 0),
@@ -1779,10 +1824,13 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       if (state.pausedForCombat) {
         state.pausedForCombat = false;
         resetStuckCounts();
+        state.lastPathAt = 0;
         bot.log("cave resumed after auto attack", {
           combatDurationMs: Number(attackStatus?.combatDurationMs || 0),
           targetCount: Number(attackStatus?.targetCount || 0),
+          savedWaypoint: state.savedPathState?.waypoint || null,
         });
+        state.savedPathState = null;
       }
 
       if (positionKey && positionKey !== state.lastPositionKey) {
@@ -1820,11 +1868,30 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
           waypoint,
         });
         handleFloorChange(waypoint, now);
+        const newPosition = normalizePosition(bot.getPlayerPosition());
+        if (newPosition && newPosition.z !== position.z) {
+          const bestIndex = findClosestWaypointIndex(newPosition);
+          const wouldReverse = (bestIndex < state.currentIndex && state.direction === 1) ||
+                               (bestIndex > state.currentIndex && state.direction === -1);
+          if (wouldReverse && !isAtWaypoint(newPosition, waypoint)) {
+            const nextWp = route[bestIndex];
+            if (nextWp && nextWp.z === newPosition.z) {
+              state.currentIndex = bestIndex;
+              state.direction = bestIndex >= route.length - 1 ? -1 : 1;
+              if (route.length <= 1) state.direction = 1;
+              bot.log("cave adjusted direction after floor change", {
+                newIndex: state.currentIndex + 1,
+                newDirection: state.direction,
+                total: route.length,
+              });
+            }
+          }
+        }
         return;
       }
 
       const timeSinceProgress = now - (state.lastProgressAt || now);
-      const isStuck = timeSinceProgress >= 5000 &&
+      const isStuck = timeSinceProgress >= 3000 &&
         state.lastPositionKey === positionKey &&
         positionKey != null;
 
