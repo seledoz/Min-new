@@ -4,17 +4,17 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
    Informacoes de versao — preenchidas pelo build.sh
 
    O script de build (build.sh) substitui os placeholders
-   features/cave-attack-heal-optimizations, a9421de e 2026-06-15T23:33:51Z pelos valores reais
+   features/cave-attack-heal-optimizations, 646536d e 2026-06-15T23:53:14Z pelos valores reais
    do git no momento da construcao do bundle pz-bot.js.
 
    Para desenvolvimento local sem build, os placeholders
    permanecem como estao e o codigo usa "unknown" como fallback.
    ============================================================ */
 window.__minibiaBotBundle.versionInfo = {
-  number: "2.0.0",
+  number: "2.1.0",
   branch: "features/cave-attack-heal-optimizations",
-  commit: "a9421de",
-  date: "2026-06-15T23:33:51Z"
+  commit: "646536d",
+  date: "2026-06-15T23:53:14Z"
 };
 window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 
@@ -5677,6 +5677,59 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     return addWaypoint(position);
   }
 
+  function optimizeRoute() {
+    const before = route.length;
+    if (before < 2) {
+      bot.log("cave route too short to optimize", { length: before });
+      return { before, after: before };
+    }
+
+    const deduped = [route[0]];
+    for (let i = 1; i < route.length; i++) {
+      const prev = deduped[deduped.length - 1];
+      const curr = route[i];
+      if (prev.x !== curr.x || prev.y !== curr.y || prev.z !== curr.z) {
+        deduped.push(curr);
+      }
+    }
+
+    if (deduped.length >= 3) {
+      const simplified = [deduped[0]];
+      for (let i = 1; i < deduped.length - 1; i++) {
+        const prev = simplified[simplified.length - 1];
+        const curr = deduped[i];
+        const next = deduped[i + 1];
+
+        if (curr.z !== prev.z || next.z !== curr.z) {
+          simplified.push(curr);
+          continue;
+        }
+
+        const area = Math.abs(
+          prev.x * (curr.y - next.y) +
+          curr.x * (next.y - prev.y) +
+          next.x * (prev.y - curr.y)
+        );
+
+        if (area !== 0) {
+          simplified.push(curr);
+        }
+      }
+      simplified.push(deduped[deduped.length - 1]);
+
+      route.length = 0;
+      route.push(...simplified);
+    } else {
+      route.length = 0;
+      route.push(...deduped);
+    }
+
+    persistRoute();
+    const after = route.length;
+    bot.log("cave route optimized", { before, after });
+    return { before, after };
+  }
+
   function clearWaypoints() {
     route = [];
     state.currentIndex = 0;
@@ -5798,6 +5851,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     deletePreset,
     addWaypoint,
     addWaypointCurrentSpot,
+    optimizeRoute,
     clearWaypoints,
     clearTransitions,
     removeLastWaypoint,
@@ -8119,9 +8173,10 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-preset-new">New</button>
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-preset-delete">Delete</button>
               </div>
-              <div class="mb-actions mb-actions-inline-two">
+              <div class="mb-actions mb-actions-inline-three">
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-record">Record Spot</button>
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-remove-last">Remove Last</button>
+                <button type="button" class="mb-small-button" id="minibia-bot-cave-optimize">Optimize</button>
               </div>
               <div class="mb-small-note" id="minibia-bot-cave-closest">Closest start: no waypoints</div>
               <div class="mb-small-note" id="minibia-bot-cave-transition-status">Transitions learned: none</div>
@@ -8215,6 +8270,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     const reloadButton = panel.querySelector("#minibia-bot-reload");
     const caveRecordButton = panel.querySelector("#minibia-bot-cave-record");
     const caveRemoveLastButton = panel.querySelector("#minibia-bot-cave-remove-last");
+    const caveOptimizeButton = panel.querySelector("#minibia-bot-cave-optimize");
     const caveStartButton = panel.querySelector("#minibia-bot-cave-start");
     const caveStopButton = panel.querySelector("#minibia-bot-cave-stop");
     const cavePresetSelect = panel.querySelector("#minibia-bot-cave-preset-select");
@@ -8422,6 +8478,21 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
         refreshCaveStatus();
         refreshCaveClosestStatus();
         refreshCaveTransitionStatus();
+      });
+    }
+
+    if (caveOptimizeButton) {
+      caveOptimizeButton.addEventListener("click", () => {
+        const result = bot.cave.optimizeRoute();
+        refreshCavePresetControls();
+        refreshCaveStatus();
+        refreshCaveClosestStatus();
+        refreshCaveTransitionStatus();
+        if (result && result.before !== result.after) {
+          alert(`Route optimized: ${result.before} → ${result.after} waypoints`);
+        } else {
+          alert("Route already optimal (no changes needed)");
+        }
       });
     }
 

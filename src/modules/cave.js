@@ -2058,6 +2058,59 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     return addWaypoint(position);
   }
 
+  function optimizeRoute() {
+    const before = route.length;
+    if (before < 2) {
+      bot.log("cave route too short to optimize", { length: before });
+      return { before, after: before };
+    }
+
+    const deduped = [route[0]];
+    for (let i = 1; i < route.length; i++) {
+      const prev = deduped[deduped.length - 1];
+      const curr = route[i];
+      if (prev.x !== curr.x || prev.y !== curr.y || prev.z !== curr.z) {
+        deduped.push(curr);
+      }
+    }
+
+    if (deduped.length >= 3) {
+      const simplified = [deduped[0]];
+      for (let i = 1; i < deduped.length - 1; i++) {
+        const prev = simplified[simplified.length - 1];
+        const curr = deduped[i];
+        const next = deduped[i + 1];
+
+        if (curr.z !== prev.z || next.z !== curr.z) {
+          simplified.push(curr);
+          continue;
+        }
+
+        const area = Math.abs(
+          prev.x * (curr.y - next.y) +
+          curr.x * (next.y - prev.y) +
+          next.x * (prev.y - curr.y)
+        );
+
+        if (area !== 0) {
+          simplified.push(curr);
+        }
+      }
+      simplified.push(deduped[deduped.length - 1]);
+
+      route.length = 0;
+      route.push(...simplified);
+    } else {
+      route.length = 0;
+      route.push(...deduped);
+    }
+
+    persistRoute();
+    const after = route.length;
+    bot.log("cave route optimized", { before, after });
+    return { before, after };
+  }
+
   function clearWaypoints() {
     route = [];
     state.currentIndex = 0;
@@ -2179,6 +2232,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     deletePreset,
     addWaypoint,
     addWaypointCurrentSpot,
+    optimizeRoute,
     clearWaypoints,
     clearTransitions,
     removeLastWaypoint,

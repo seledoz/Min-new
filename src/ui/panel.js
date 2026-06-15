@@ -1112,9 +1112,10 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-preset-new">New</button>
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-preset-delete">Delete</button>
               </div>
-              <div class="mb-actions mb-actions-inline-two">
+              <div class="mb-actions mb-actions-inline-three">
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-record">Record Spot</button>
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-remove-last">Remove Last</button>
+                <button type="button" class="mb-small-button" id="minibia-bot-cave-optimize">Optimize</button>
               </div>
               <div class="mb-small-note" id="minibia-bot-cave-closest">Closest start: no waypoints</div>
               <div class="mb-small-note" id="minibia-bot-cave-transition-status">Transitions learned: none</div>
@@ -1208,6 +1209,7 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     const reloadButton = panel.querySelector("#minibia-bot-reload");
     const caveRecordButton = panel.querySelector("#minibia-bot-cave-record");
     const caveRemoveLastButton = panel.querySelector("#minibia-bot-cave-remove-last");
+    const caveOptimizeButton = panel.querySelector("#minibia-bot-cave-optimize");
     const caveStartButton = panel.querySelector("#minibia-bot-cave-start");
     const caveStopButton = panel.querySelector("#minibia-bot-cave-stop");
     const cavePresetSelect = panel.querySelector("#minibia-bot-cave-preset-select");
@@ -1415,6 +1417,21 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
         refreshCaveStatus();
         refreshCaveClosestStatus();
         refreshCaveTransitionStatus();
+      });
+    }
+
+    if (caveOptimizeButton) {
+      caveOptimizeButton.addEventListener("click", () => {
+        const result = bot.cave.optimizeRoute();
+        refreshCavePresetControls();
+        refreshCaveStatus();
+        refreshCaveClosestStatus();
+        refreshCaveTransitionStatus();
+        if (result && result.before !== result.after) {
+          alert(`Route optimized: ${result.before} → ${result.after} waypoints`);
+        } else {
+          alert("Route already optimal (no changes needed)");
+        }
       });
     }
 
