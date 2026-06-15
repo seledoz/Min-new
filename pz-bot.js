@@ -4,17 +4,17 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
    Informacoes de versao — preenchidas pelo build.sh
 
    O script de build (build.sh) substitui os placeholders
-   features/fecras-path, ea7b55d e 2026-06-15T23:05:23Z pelos valores reais
+   features/fecras-path, f042a30 e 2026-06-15T23:10:34Z pelos valores reais
    do git no momento da construcao do bundle pz-bot.js.
 
    Para desenvolvimento local sem build, os placeholders
    permanecem como estao e o codigo usa "unknown" como fallback.
    ============================================================ */
 window.__minibiaBotBundle.versionInfo = {
-  number: "0.4.0",
+  number: "2.0.0",
   branch: "features/fecras-path",
-  commit: "ea7b55d",
-  date: "2026-06-15T23:05:23Z"
+  commit: "f042a30",
+  date: "2026-06-15T23:10:34Z"
 };
 window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 
