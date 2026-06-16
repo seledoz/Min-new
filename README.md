@@ -14,7 +14,7 @@
 6. Paste this and press `Enter`:
 
 ```js
-fetch("https://raw.githubusercontent.com/vinaoooooz/minibia-bot/main/pz-bot.js?t=" + Date.now())
+fetch("https://raw.githubusercontent.com/vinaoooooz/minibia-bot/features/cave-attack-heal-optimizations/pz-bot.js?t=" + Date.now())
   .then((r) => r.text())
   .then((code) => eval(code));
 ```
