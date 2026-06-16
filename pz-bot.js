@@ -4,17 +4,17 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
    Informacoes de versao — preenchidas pelo build.sh
 
    O script de build (build.sh) substitui os placeholders
-   features/fecras-path, f042a30 e 2026-06-15T23:10:34Z pelos valores reais
+   features/cave-attack-heal-optimizations, ca5deed e 2026-06-16T00:33:59Z pelos valores reais
    do git no momento da construcao do bundle pz-bot.js.
 
    Para desenvolvimento local sem build, os placeholders
    permanecem como estao e o codigo usa "unknown" como fallback.
    ============================================================ */
 window.__minibiaBotBundle.versionInfo = {
-  number: "2.0.0",
-  branch: "features/fecras-path",
-  commit: "f042a30",
-  date: "2026-06-15T23:10:34Z"
+  number: "2.2.2",
+  branch: "features/cave-attack-heal-optimizations",
+  commit: "ca5deed",
+  date: "2026-06-16T00:33:59Z"
 };
 window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 
@@ -2043,13 +2043,15 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
     lastManaAttemptAt: 0,
     pendingHpAttempt: null,
     pendingManaAttempt: null,
+    hpFailCount: 0,
+    manaFailCount: 0,
   };
 
   const config = Object.assign(
     {
       tickMs: 50,
       healCooldownMs: 1200,
-      healRetryMs: 200,
+      healRetryMs: 400,
       healConfirmMs: 250,
       minHp: 250,
       hpHotbarSlot: 1,
@@ -2127,10 +2129,12 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
       if (didHpHealSucceed(stats, hpAttempt)) {
         state.lastHpHealAt = hpAttempt.attemptedAt;
         state.pendingHpAttempt = null;
+        state.hpFailCount = 0;
         bot.log("confirmed hp heal", { slot: hpAttempt.slot });
       } else if (now - hpAttempt.attemptedAt >= Math.max(50, Number(config.healConfirmMs) || 0)) {
         state.pendingHpAttempt = null;
-        bot.log("hp heal did not register", { slot: hpAttempt.slot });
+        state.hpFailCount = (state.hpFailCount || 0) + 1;
+        bot.log("hp heal did not register", { slot: hpAttempt.slot, failCount: state.hpFailCount });
       }
     }
 
@@ -2139,10 +2143,12 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
       if (didManaHealSucceed(stats, manaAttempt)) {
         state.lastManaHealAt = manaAttempt.attemptedAt;
         state.pendingManaAttempt = null;
+        state.manaFailCount = 0;
         bot.log("confirmed mana heal", { slot: manaAttempt.slot });
       } else if (now - manaAttempt.attemptedAt >= Math.max(50, Number(config.healConfirmMs) || 0)) {
         state.pendingManaAttempt = null;
-        bot.log("mana heal did not register", { slot: manaAttempt.slot });
+        state.manaFailCount = (state.manaFailCount || 0) + 1;
+        bot.log("mana heal did not register", { slot: manaAttempt.slot, failCount: state.manaFailCount });
       }
     }
   }
@@ -2156,7 +2162,8 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
       hp.current > 0 &&
       hp.current <= Math.max(0, Number(config.minHp) || 0) &&
       now - state.lastHpHealAt >= config.healCooldownMs &&
-      now - state.lastHpAttemptAt >= Math.max(50, Number(config.healRetryMs) || 0)
+      now - state.lastHpAttemptAt >= Math.max(50, Number(config.healRetryMs) || 0) &&
+      (state.hpFailCount || 0) < 3
     );
   }
 
@@ -2168,7 +2175,8 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
     return (
       mana.current <= Math.max(0, Number(config.minMana) || 0) &&
       now - state.lastManaHealAt >= config.healCooldownMs &&
-      now - state.lastManaAttemptAt >= Math.max(50, Number(config.healRetryMs) || 0)
+      now - state.lastManaAttemptAt >= Math.max(50, Number(config.healRetryMs) || 0) &&
+      (state.manaFailCount || 0) < 3
     );
   }
 
@@ -3604,6 +3612,8 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
     isCombatActive,
     syncMeleeChase,
     normalizeHotbarSlot,
+    skipTarget,
+    isTargetSkipped,
     config,
   };
 };
@@ -3639,20 +3649,23 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     lastObservedPosition: null,
     pendingTransitionSource: null,
     pausedForCombat: false,
+    savedPathState: null,
     tickCount: 0,
+    loopStuckCount: 0,
   };
   const minimapOverlayState = {
     timerId: null,
   };
 
-  const config = Object.assign(
+    const config = Object.assign(
     {
       tickMs: 500,
-      repathMs: 1500,
+      repathMs: 3000,
       waypointTolerance: 0,
       enabled: false,
       activePresetName: defaultPresetName,
       pathfinderMode: 'game',
+      loopMode: true,
     },
     bot.storage.get(configStorageKey, {})
   );
@@ -4103,6 +4116,9 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
   function giveUpChase(target, reason) {
     chaseState.targetId = null;
     bot.log("cave gave up chase", { targetId: target?.id, reason });
+    if (target && bot.attack?.skipTarget) {
+      bot.attack.skipTarget(target, 'cave chase: ' + reason, Date.now(), 5000);
+    }
     return false;
   }
 
@@ -4893,6 +4909,25 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       const path = findPathAStar(fromPos, waypointPos);
 
       if (path && path.length > 0) {
+        if (path.length <= 3) {
+          const to = new Position(waypoint.x, waypoint.y, waypoint.z);
+          try {
+            window.gameClient?.world?.pathfinder?.findPath?.(from, to);
+            state.lastPathAt = now;
+            bot.log("cave A* short path, using game pathfinder", {
+              ...waypoint,
+              index: state.currentIndex + 1,
+              total: route.length,
+              pathLength: path.length,
+            });
+            return true;
+          } catch (error) {
+            bot.log("cave A* short path fallback failed", {
+              ...waypoint, error: error?.message || error,
+            });
+          }
+        }
+
         const playerPos = fromPos;
         const waypointOnScreen = waypointPos && isOnScreen(waypointPos, playerPos);
         let targetTile = null;
@@ -5201,6 +5236,9 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     }
 
     if (isLadderTile(targetTile)) {
+      if (!isSameTile(position, targetPosition)) {
+        return goToPosition(targetPosition);
+      }
       window.gameClient?.mouse?.use?.({ which: targetTile, index: 0xFF });
       state.lastStairsUseAt = now;
       state.lastPathAt = now;
@@ -5238,22 +5276,8 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       return false;
     }
 
-    const visibleCandidate = findNearbyTransitionTile(position, waypoint);
-    if (visibleCandidate) {
-      const moved = useFloorChangeTile(visibleCandidate, waypoint, now);
-      if (moved) {
-        bot.log("cave probing visible floor-change tile", {
-          tileX: visibleCandidate.position.x,
-          tileY: visibleCandidate.position.y,
-          tileZ: visibleCandidate.position.z,
-          targetZ: waypoint.z,
-        });
-        return true;
-      }
-    }
-
     const knownTransition = findBestKnownTransition(position, waypoint);
-    if (knownTransition) {
+    if (knownTransition && knownTransition.count >= 2) {
       const target = {
         tile: getTileAt(knownTransition.from),
         position: knownTransition.from,
@@ -5274,6 +5298,37 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
         waypoint,
       });
     }
+
+    const visibleCandidate = findNearbyTransitionTile(position, waypoint);
+    if (visibleCandidate) {
+      const moved = useFloorChangeTile(visibleCandidate, waypoint, now);
+      if (moved) {
+        bot.log("cave probing visible floor-change tile", {
+          tileX: visibleCandidate.position.x,
+          tileY: visibleCandidate.position.y,
+          tileZ: visibleCandidate.position.z,
+          targetZ: waypoint.z,
+        });
+        return true;
+      }
+    }
+
+    if (knownTransition) {
+      const target = {
+        tile: getTileAt(knownTransition.from),
+        position: knownTransition.from,
+      };
+      const moved = useFloorChangeTile(target, waypoint, now);
+      if (moved) {
+        bot.log("cave using learned floor transition (single use)", {
+          from: knownTransition.from,
+          to: knownTransition.to,
+          waypoint,
+        });
+        return true;
+      }
+    }
+
     return false;
   }
 
@@ -5289,11 +5344,19 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     let nextIndex = state.currentIndex + state.direction;
 
     if (nextIndex >= route.length) {
-      state.direction = -1;
-      nextIndex = route.length - 2;
+      if (config.loopMode) {
+        nextIndex = 0;
+      } else {
+        state.direction = -1;
+        nextIndex = route.length - 2;
+      }
     } else if (nextIndex < 0) {
-      state.direction = 1;
-      nextIndex = 1;
+      if (config.loopMode) {
+        nextIndex = route.length - 1;
+      } else {
+        state.direction = 1;
+        nextIndex = 1;
+      }
     }
 
     state.currentIndex = Math.max(0, Math.min(route.length - 1, nextIndex));
@@ -5336,7 +5399,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       state.tickCount += 1;
 
       // Periodic debug summary every 5 ticks
-      if (state.tickCount % 5 === 0) {
+      if (state.tickCount % 15 === 0) {
         const waypoint = getCurrentWaypoint();
         const dist = waypoint && position ? getDistanceToWaypoint(position, waypoint) : null;
         bot.logDebug("cave tick summary", {
@@ -5360,6 +5423,11 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       if (shouldPauseForCombat) {
         if (!state.pausedForCombat) {
           state.pausedForCombat = true;
+          state.savedPathState = {
+            waypoint: getCurrentWaypoint(),
+            index: state.currentIndex,
+            direction: state.direction,
+          };
           resetStuckCounts();
           bot.log("cave paused for auto attack", {
             combatDurationMs: Number(attackStatus?.combatDurationMs || 0),
@@ -5388,16 +5456,21 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       if (state.pausedForCombat) {
         state.pausedForCombat = false;
         resetStuckCounts();
+        state.loopStuckCount = 0;
+        state.lastPathAt = 0;
         bot.log("cave resumed after auto attack", {
           combatDurationMs: Number(attackStatus?.combatDurationMs || 0),
           targetCount: Number(attackStatus?.targetCount || 0),
+          savedWaypoint: state.savedPathState?.waypoint || null,
         });
+        state.savedPathState = null;
       }
 
       if (positionKey && positionKey !== state.lastPositionKey) {
         state.lastPositionKey = positionKey;
         state.lastProgressAt = now;
         resetStuckCounts();
+        state.loopStuckCount = 0;
       }
 
       let waypoint = getCurrentWaypoint();
@@ -5429,11 +5502,30 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
           waypoint,
         });
         handleFloorChange(waypoint, now);
+        const newPosition = normalizePosition(bot.getPlayerPosition());
+        if (newPosition && newPosition.z !== position.z) {
+          const bestIndex = findClosestWaypointIndex(newPosition);
+          const wouldReverse = (bestIndex < state.currentIndex && state.direction === 1) ||
+                               (bestIndex > state.currentIndex && state.direction === -1);
+          if (wouldReverse && !isAtWaypoint(newPosition, waypoint)) {
+            const nextWp = route[bestIndex];
+            if (nextWp && nextWp.z === newPosition.z) {
+              state.currentIndex = bestIndex;
+              state.direction = bestIndex >= route.length - 1 ? -1 : 1;
+              if (route.length <= 1) state.direction = 1;
+              bot.log("cave adjusted direction after floor change", {
+                newIndex: state.currentIndex + 1,
+                newDirection: state.direction,
+                total: route.length,
+              });
+            }
+          }
+        }
         return;
       }
 
       const timeSinceProgress = now - (state.lastProgressAt || now);
-      const isStuck = timeSinceProgress >= 5000 &&
+      const isStuck = timeSinceProgress >= 3000 &&
         state.lastPositionKey === positionKey &&
         positionKey != null;
 
@@ -5459,6 +5551,26 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
         }
         if (fallback.action === 'repath') {
           resetStuckCounts(`${waypoint.x},${waypoint.y}`);
+        }
+      }
+
+      // Loop mode stuck fallback: find nearest waypoint to escape wrap-around
+      if (isStuck && config.loopMode) {
+        state.loopStuckCount = (state.loopStuckCount || 0) + 1;
+        if (state.loopStuckCount <= 2) {
+          const pos = normalizePosition(bot.getPlayerPosition());
+          const closestIndex = findClosestWaypointIndex(pos);
+          state.currentIndex = closestIndex;
+          state.direction = state.direction > 0 ? -1 : 1;
+          state.lastPathAt = 0;
+          state.lastProgressAt = now;
+          resetStuckCounts();
+          bot.log("cave loop mode stuck, falling back to nearest waypoint", {
+            stuckForMs: timeSinceProgress,
+            closestIndex: closestIndex + 1,
+            newDirection: state.direction,
+            loopStuckCount: state.loopStuckCount,
+          });
         }
       }
 
@@ -5600,6 +5712,116 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     return addWaypoint(position);
   }
 
+  function tspOptimizeRoute() {
+    const before = route.length;
+    if (before < 3) {
+      bot.log("cave route too short for TSP", { length: before });
+      return { before, after: before };
+    }
+
+    const segments = [];
+    let currentSeg = [route[0]];
+    for (let i = 1; i < route.length; i++) {
+      if (route[i].z === route[i - 1].z) {
+        currentSeg.push(route[i]);
+      } else {
+        segments.push(currentSeg);
+        currentSeg = [route[i]];
+      }
+    }
+    segments.push(currentSeg);
+
+    const optimized = [];
+    for (const seg of segments) {
+      if (seg.length >= 3) {
+        const result = [seg[0]];
+        const visited = new Set([0]);
+        let current = 0;
+        while (visited.size < seg.length) {
+          let nearest = -1;
+          let nearestDist = Infinity;
+          for (let i = 0; i < seg.length; i++) {
+            if (visited.has(i)) continue;
+            const d = Math.abs(seg[current].x - seg[i].x) + Math.abs(seg[current].y - seg[i].y);
+            if (d < nearestDist) {
+              nearestDist = d;
+              nearest = i;
+            }
+          }
+          if (nearest >= 0) {
+            visited.add(nearest);
+            result.push(seg[nearest]);
+            current = nearest;
+          }
+        }
+        optimized.push(...result);
+      } else {
+        optimized.push(...seg);
+      }
+    }
+
+    route.length = 0;
+    route.push(...optimized);
+    persistRoute();
+
+    const after = route.length;
+    bot.log("cave route tsp optimized", { before, after });
+    return { before, after };
+  }
+
+  function optimizeRoute() {
+    const before = route.length;
+    if (before < 2) {
+      bot.log("cave route too short to optimize", { length: before });
+      return { before, after: before };
+    }
+
+    const deduped = [route[0]];
+    for (let i = 1; i < route.length; i++) {
+      const prev = deduped[deduped.length - 1];
+      const curr = route[i];
+      if (prev.x !== curr.x || prev.y !== curr.y || prev.z !== curr.z) {
+        deduped.push(curr);
+      }
+    }
+
+    if (deduped.length >= 3) {
+      const simplified = [deduped[0]];
+      for (let i = 1; i < deduped.length - 1; i++) {
+        const prev = simplified[simplified.length - 1];
+        const curr = deduped[i];
+        const next = deduped[i + 1];
+
+        if (curr.z !== prev.z || next.z !== curr.z) {
+          simplified.push(curr);
+          continue;
+        }
+
+        const area = Math.abs(
+          prev.x * (curr.y - next.y) +
+          curr.x * (next.y - prev.y) +
+          next.x * (prev.y - curr.y)
+        );
+
+        if (area !== 0) {
+          simplified.push(curr);
+        }
+      }
+      simplified.push(deduped[deduped.length - 1]);
+
+      route.length = 0;
+      route.push(...simplified);
+    } else {
+      route.length = 0;
+      route.push(...deduped);
+    }
+
+    persistRoute();
+    const after = route.length;
+    bot.log("cave route optimized", { before, after });
+    return { before, after };
+  }
+
   function clearWaypoints() {
     route = [];
     state.currentIndex = 0;
@@ -5721,6 +5943,8 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     deletePreset,
     addWaypoint,
     addWaypointCurrentSpot,
+    optimizeRoute,
+    tspOptimizeRoute,
     clearWaypoints,
     clearTransitions,
     removeLastWaypoint,
@@ -7301,6 +7525,11 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     const status = bot.cave?.status?.();
     const mode = status?.config?.pathfinderMode || 'game';
     select.value = mode;
+
+    const loopCheck = document.getElementById("minibia-bot-cave-loop-mode");
+    if (loopCheck && status?.config) {
+      loopCheck.checked = status.config.loopMode !== false;
+    }
   }
 
   function refreshEquipRingStatus() {
@@ -7655,6 +7884,10 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
 
       #minibia-bot-panel .mb-actions-inline-two {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      #minibia-bot-panel .mb-actions-inline-one {
+        grid-template-columns: repeat(1, minmax(0, 1fr));
       }
 
       #minibia-bot-panel button {
@@ -8042,9 +8275,10 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-preset-new">New</button>
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-preset-delete">Delete</button>
               </div>
-              <div class="mb-actions mb-actions-inline-two">
+              <div class="mb-actions mb-actions-inline-three">
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-record">Record Spot</button>
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-remove-last">Remove Last</button>
+                <button type="button" class="mb-small-button" id="minibia-bot-cave-optimize">Optimize</button>
               </div>
               <div class="mb-small-note" id="minibia-bot-cave-closest">Closest start: no waypoints</div>
               <div class="mb-small-note" id="minibia-bot-cave-transition-status">Transitions learned: none</div>
@@ -8055,6 +8289,13 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
                   <option value="astar">A* (smart pathing)</option>
                 </select>
               </label>
+              <label class="mb-toggle">
+                <input type="checkbox" id="minibia-bot-cave-loop-mode" />
+                <span>Loop mode (no backtracking)</span>
+              </label>
+              <div class="mb-actions mb-actions-inline-one">
+                <button type="button" class="mb-small-button" id="minibia-bot-cave-tsp">TSP Optimize</button>
+              </div>
               <div class="mb-actions mb-actions-inline-two">
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-start">Start</button>
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-stop">Stop</button>
@@ -8138,12 +8379,15 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     const reloadButton = panel.querySelector("#minibia-bot-reload");
     const caveRecordButton = panel.querySelector("#minibia-bot-cave-record");
     const caveRemoveLastButton = panel.querySelector("#minibia-bot-cave-remove-last");
+    const caveOptimizeButton = panel.querySelector("#minibia-bot-cave-optimize");
     const caveStartButton = panel.querySelector("#minibia-bot-cave-start");
     const caveStopButton = panel.querySelector("#minibia-bot-cave-stop");
     const cavePresetSelect = panel.querySelector("#minibia-bot-cave-preset-select");
     const cavePresetNewButton = panel.querySelector("#minibia-bot-cave-preset-new");
     const cavePresetDeleteButton = panel.querySelector("#minibia-bot-cave-preset-delete");
     const cavePathfinderModeSelect = panel.querySelector("#minibia-bot-cave-pathfinder-mode");
+    const caveLoopModeInput = panel.querySelector("#minibia-bot-cave-loop-mode");
+    const caveTspButton = panel.querySelector("#minibia-bot-cave-tsp");
     const debugEnabledInput = panel.querySelector("#minibia-bot-debug-enabled");
     const debugLogsDownloadButton = panel.querySelector("#minibia-bot-logs-download");
     const debugLogsClearButton = panel.querySelector("#minibia-bot-logs-clear");
@@ -8345,6 +8589,42 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
         refreshCaveStatus();
         refreshCaveClosestStatus();
         refreshCaveTransitionStatus();
+      });
+    }
+
+    if (caveOptimizeButton) {
+      caveOptimizeButton.addEventListener("click", () => {
+        const result = bot.cave.optimizeRoute();
+        refreshCavePresetControls();
+        refreshCaveStatus();
+        refreshCaveClosestStatus();
+        refreshCaveTransitionStatus();
+        if (result && result.before !== result.after) {
+          alert(`Route optimized: ${result.before} → ${result.after} waypoints`);
+        } else {
+          alert("Route already optimal (no changes needed)");
+        }
+      });
+    }
+
+    if (caveLoopModeInput) {
+      caveLoopModeInput.addEventListener("change", () => {
+        bot.cave.updateConfig({ loopMode: caveLoopModeInput.checked });
+      });
+    }
+
+    if (caveTspButton) {
+      caveTspButton.addEventListener("click", () => {
+        const result = bot.cave.tspOptimizeRoute();
+        refreshCavePresetControls();
+        refreshCaveStatus();
+        refreshCaveClosestStatus();
+        refreshCaveTransitionStatus();
+        if (result && result.before !== result.after) {
+          alert(`TSP optimized: ${result.before} → ${result.after} waypoints`);
+        } else {
+          alert("Route already optimal (no changes needed)");
+        }
       });
     }
 
