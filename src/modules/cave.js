@@ -32,6 +32,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     pausedForCombat: false,
     savedPathState: null,
     tickCount: 0,
+    loopStuckCount: 0,
   };
   const minimapOverlayState = {
     timerId: null,
@@ -1833,6 +1834,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       if (state.pausedForCombat) {
         state.pausedForCombat = false;
         resetStuckCounts();
+        state.loopStuckCount = 0;
         state.lastPathAt = 0;
         bot.log("cave resumed after auto attack", {
           combatDurationMs: Number(attackStatus?.combatDurationMs || 0),
@@ -1846,6 +1848,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
         state.lastPositionKey = positionKey;
         state.lastProgressAt = now;
         resetStuckCounts();
+        state.loopStuckCount = 0;
       }
 
       let waypoint = getCurrentWaypoint();
@@ -1926,6 +1929,26 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
         }
         if (fallback.action === 'repath') {
           resetStuckCounts(`${waypoint.x},${waypoint.y}`);
+        }
+      }
+
+      // Loop mode stuck fallback: find nearest waypoint to escape wrap-around
+      if (isStuck && config.loopMode) {
+        state.loopStuckCount = (state.loopStuckCount || 0) + 1;
+        if (state.loopStuckCount <= 2) {
+          const pos = normalizePosition(bot.getPlayerPosition());
+          const closestIndex = findClosestWaypointIndex(pos);
+          state.currentIndex = closestIndex;
+          state.direction = state.direction > 0 ? -1 : 1;
+          state.lastPathAt = 0;
+          state.lastProgressAt = now;
+          resetStuckCounts();
+          bot.log("cave loop mode stuck, falling back to nearest waypoint", {
+            stuckForMs: timeSinceProgress,
+            closestIndex: closestIndex + 1,
+            newDirection: state.direction,
+            loopStuckCount: state.loopStuckCount,
+          });
         }
       }
 
