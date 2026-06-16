@@ -371,6 +371,11 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     const status = bot.cave?.status?.();
     const mode = status?.config?.pathfinderMode || 'game';
     select.value = mode;
+
+    const loopCheck = document.getElementById("minibia-bot-cave-loop-mode");
+    if (loopCheck && status?.config) {
+      loopCheck.checked = status.config.loopMode !== false;
+    }
   }
 
   function refreshEquipRingStatus() {
@@ -725,6 +730,10 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
 
       #minibia-bot-panel .mb-actions-inline-two {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      #minibia-bot-panel .mb-actions-inline-one {
+        grid-template-columns: repeat(1, minmax(0, 1fr));
       }
 
       #minibia-bot-panel button {
@@ -1126,6 +1135,13 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
                   <option value="astar">A* (smart pathing)</option>
                 </select>
               </label>
+              <label class="mb-toggle">
+                <input type="checkbox" id="minibia-bot-cave-loop-mode" />
+                <span>Loop mode (no backtracking)</span>
+              </label>
+              <div class="mb-actions mb-actions-inline-one">
+                <button type="button" class="mb-small-button" id="minibia-bot-cave-tsp">TSP Optimize</button>
+              </div>
               <div class="mb-actions mb-actions-inline-two">
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-start">Start</button>
                 <button type="button" class="mb-small-button" id="minibia-bot-cave-stop">Stop</button>
@@ -1216,6 +1232,8 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
     const cavePresetNewButton = panel.querySelector("#minibia-bot-cave-preset-new");
     const cavePresetDeleteButton = panel.querySelector("#minibia-bot-cave-preset-delete");
     const cavePathfinderModeSelect = panel.querySelector("#minibia-bot-cave-pathfinder-mode");
+    const caveLoopModeInput = panel.querySelector("#minibia-bot-cave-loop-mode");
+    const caveTspButton = panel.querySelector("#minibia-bot-cave-tsp");
     const debugEnabledInput = panel.querySelector("#minibia-bot-debug-enabled");
     const debugLogsDownloadButton = panel.querySelector("#minibia-bot-logs-download");
     const debugLogsClearButton = panel.querySelector("#minibia-bot-logs-clear");
@@ -1429,6 +1447,27 @@ window.__minibiaBotBundle.installPanel = function installPanel(bot) {
         refreshCaveTransitionStatus();
         if (result && result.before !== result.after) {
           alert(`Route optimized: ${result.before} → ${result.after} waypoints`);
+        } else {
+          alert("Route already optimal (no changes needed)");
+        }
+      });
+    }
+
+    if (caveLoopModeInput) {
+      caveLoopModeInput.addEventListener("change", () => {
+        bot.cave.updateConfig({ loopMode: caveLoopModeInput.checked });
+      });
+    }
+
+    if (caveTspButton) {
+      caveTspButton.addEventListener("click", () => {
+        const result = bot.cave.tspOptimizeRoute();
+        refreshCavePresetControls();
+        refreshCaveStatus();
+        refreshCaveClosestStatus();
+        refreshCaveTransitionStatus();
+        if (result && result.before !== result.after) {
+          alert(`TSP optimized: ${result.before} → ${result.after} waypoints`);
         } else {
           alert("Route already optimal (no changes needed)");
         }

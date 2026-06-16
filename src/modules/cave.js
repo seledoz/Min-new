@@ -37,7 +37,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     timerId: null,
   };
 
-  const config = Object.assign(
+    const config = Object.assign(
     {
       tickMs: 500,
       repathMs: 3000,
@@ -45,6 +45,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       enabled: false,
       activePresetName: defaultPresetName,
       pathfinderMode: 'game',
+      loopMode: true,
     },
     bot.storage.get(configStorageKey, {})
   );
@@ -1720,11 +1721,19 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     let nextIndex = state.currentIndex + state.direction;
 
     if (nextIndex >= route.length) {
-      state.direction = -1;
-      nextIndex = route.length - 2;
+      if (config.loopMode) {
+        nextIndex = 0;
+      } else {
+        state.direction = -1;
+        nextIndex = route.length - 2;
+      }
     } else if (nextIndex < 0) {
-      state.direction = 1;
-      nextIndex = 1;
+      if (config.loopMode) {
+        nextIndex = route.length - 1;
+      } else {
+        state.direction = 1;
+        nextIndex = 1;
+      }
     }
 
     state.currentIndex = Math.max(0, Math.min(route.length - 1, nextIndex));
@@ -2058,6 +2067,63 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     return addWaypoint(position);
   }
 
+  function tspOptimizeRoute() {
+    const before = route.length;
+    if (before < 3) {
+      bot.log("cave route too short for TSP", { length: before });
+      return { before, after: before };
+    }
+
+    const segments = [];
+    let currentSeg = [route[0]];
+    for (let i = 1; i < route.length; i++) {
+      if (route[i].z === route[i - 1].z) {
+        currentSeg.push(route[i]);
+      } else {
+        segments.push(currentSeg);
+        currentSeg = [route[i]];
+      }
+    }
+    segments.push(currentSeg);
+
+    const optimized = [];
+    for (const seg of segments) {
+      if (seg.length >= 3) {
+        const result = [seg[0]];
+        const visited = new Set([0]);
+        let current = 0;
+        while (visited.size < seg.length) {
+          let nearest = -1;
+          let nearestDist = Infinity;
+          for (let i = 0; i < seg.length; i++) {
+            if (visited.has(i)) continue;
+            const d = Math.abs(seg[current].x - seg[i].x) + Math.abs(seg[current].y - seg[i].y);
+            if (d < nearestDist) {
+              nearestDist = d;
+              nearest = i;
+            }
+          }
+          if (nearest >= 0) {
+            visited.add(nearest);
+            result.push(seg[nearest]);
+            current = nearest;
+          }
+        }
+        optimized.push(...result);
+      } else {
+        optimized.push(...seg);
+      }
+    }
+
+    route.length = 0;
+    route.push(...optimized);
+    persistRoute();
+
+    const after = route.length;
+    bot.log("cave route tsp optimized", { before, after });
+    return { before, after };
+  }
+
   function optimizeRoute() {
     const before = route.length;
     if (before < 2) {
@@ -2233,6 +2299,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     addWaypoint,
     addWaypointCurrentSpot,
     optimizeRoute,
+    tspOptimizeRoute,
     clearWaypoints,
     clearTransitions,
     removeLastWaypoint,

@@ -1,6 +1,6 @@
 # Minibia Bot
 
-**Versão atual: 2.1.0** — branch `features/cave-attack-heal-optimizations`
+**Versão atual: 2.2.0** — branch `features/cave-attack-heal-optimizations`
 
 ## Load From GitHub In Chrome Or Edge
 
