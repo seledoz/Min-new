@@ -4,17 +4,17 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
    Informacoes de versao — preenchidas pelo build.sh
 
    O script de build (build.sh) substitui os placeholders
-   features/cave-attack-heal-optimizations, 6ad5e3f e 2026-06-16T00:19:38Z pelos valores reais
+   features/cave-attack-heal-optimizations, 6556de1 e 2026-06-16T00:22:43Z pelos valores reais
    do git no momento da construcao do bundle pz-bot.js.
 
    Para desenvolvimento local sem build, os placeholders
    permanecem como estao e o codigo usa "unknown" como fallback.
    ============================================================ */
 window.__minibiaBotBundle.versionInfo = {
-  number: "2.2.0",
+  number: "2.2.1",
   branch: "features/cave-attack-heal-optimizations",
-  commit: "6ad5e3f",
-  date: "2026-06-16T00:19:38Z"
+  commit: "6556de1",
+  date: "2026-06-16T00:22:43Z"
 };
 window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 
