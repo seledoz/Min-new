@@ -797,8 +797,6 @@ window.__minibiaBotBundle.installAutoAttackModule = function installAutoAttackMo
     isCombatActive,
     syncMeleeChase,
     normalizeHotbarSlot,
-    skipTarget,
-    isTargetSkipped,
     config,
   };
 };
