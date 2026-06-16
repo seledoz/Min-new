@@ -1617,6 +1617,9 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     }
 
     if (isLadderTile(targetTile)) {
+      if (!isSameTile(position, targetPosition)) {
+        return goToPosition(targetPosition);
+      }
       window.gameClient?.mouse?.use?.({ which: targetTile, index: 0xFF });
       state.lastStairsUseAt = now;
       state.lastPathAt = now;
