@@ -33,6 +33,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     savedPathState: null,
     tickCount: 0,
     loopStuckCount: 0,
+    floorChangeStuckAt: 0,
   };
   const minimapOverlayState = {
     timerId: null,
@@ -1617,17 +1618,31 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     }
 
     if (isLadderTile(targetTile)) {
-      if (!isSameTile(position, targetPosition)) {
-        return goToPosition(targetPosition);
+      if (!isAdjacentTile(position, targetPosition)) {
+        const adjacentPosition = findAdjacentWalkablePosition(targetPosition, position);
+        if (adjacentPosition) {
+          bot.log("cave pathing to ladder adjacent tile", {
+            ladder: targetPosition,
+            adjacent: adjacentPosition,
+            playerDistance: getDistance(position, targetPosition),
+          });
+          return goToPosition(adjacentPosition);
+        }
+        bot.log("cave no walkable tile adjacent to ladder", {
+          ladder: targetPosition,
+          playerDistance: getDistance(position, targetPosition),
+        });
+        return false;
       }
+      bot.log("cave using ladder", {
+        position,
+        ladder: targetPosition,
+        targetZ: waypoint?.z ?? null,
+      });
       window.gameClient?.mouse?.use?.({ which: targetTile, index: 0xFF });
       state.lastStairsUseAt = now;
       state.lastPathAt = now;
       markPendingTransitionSource(targetPosition);
-      bot.log("cave used ladder tile", {
-        source: targetPosition,
-        targetZ: waypoint?.z ?? null,
-      });
       return true;
     }
 
@@ -1710,6 +1725,9 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       }
     }
 
+    bot.log("cave floor change failed - no accessible transition tile found", {
+      fromZ: position.z, toZ: waypoint.z, waypoint,
+    });
     return false;
   }
 
@@ -1885,6 +1903,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
         handleFloorChange(waypoint, now);
         const newPosition = normalizePosition(bot.getPlayerPosition());
         if (newPosition && newPosition.z !== position.z) {
+          state.floorChangeStuckAt = 0;
           const bestIndex = findClosestWaypointIndex(newPosition);
           const wouldReverse = (bestIndex < state.currentIndex && state.direction === 1) ||
                                (bestIndex > state.currentIndex && state.direction === -1);
@@ -1900,6 +1919,19 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
                 total: route.length,
               });
             }
+          }
+        } else {
+          if (!state.floorChangeStuckAt) state.floorChangeStuckAt = now;
+          const stuckFor = now - state.floorChangeStuckAt;
+          if (stuckFor >= 5000 && (state.tickCount % 10 === 0)) {
+            bot.log("cave floor change stuck", {
+              fromZ: position.z,
+              toZ: waypoint.z,
+              stuckForMs: stuckFor,
+              position,
+              waypoint,
+              waypointIndex: state.currentIndex + 1,
+            });
           }
         }
         return;

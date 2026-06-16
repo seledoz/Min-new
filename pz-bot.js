@@ -4,7 +4,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
    Informacoes de versao — preenchidas pelo build.sh
 
    O script de build (build.sh) substitui os placeholders
-   features/cave-attack-heal-optimizations, 2079b27 e 2026-06-16T00:44:16Z pelos valores reais
+   features/cave-attack-heal-optimizations, a2cdcea e 2026-06-16T00:50:30Z pelos valores reais
    do git no momento da construcao do bundle pz-bot.js.
 
    Para desenvolvimento local sem build, os placeholders
@@ -13,8 +13,8 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 window.__minibiaBotBundle.versionInfo = {
   number: "2.2.2",
   branch: "features/cave-attack-heal-optimizations",
-  commit: "2079b27",
-  date: "2026-06-16T00:44:16Z"
+  commit: "a2cdcea",
+  date: "2026-06-16T00:50:30Z"
 };
 window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 
@@ -3652,6 +3652,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     savedPathState: null,
     tickCount: 0,
     loopStuckCount: 0,
+    floorChangeStuckAt: 0,
   };
   const minimapOverlayState = {
     timerId: null,
@@ -5236,17 +5237,31 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
     }
 
     if (isLadderTile(targetTile)) {
-      if (!isSameTile(position, targetPosition)) {
-        return goToPosition(targetPosition);
+      if (!isAdjacentTile(position, targetPosition)) {
+        const adjacentPosition = findAdjacentWalkablePosition(targetPosition, position);
+        if (adjacentPosition) {
+          bot.log("cave pathing to ladder adjacent tile", {
+            ladder: targetPosition,
+            adjacent: adjacentPosition,
+            playerDistance: getDistance(position, targetPosition),
+          });
+          return goToPosition(adjacentPosition);
+        }
+        bot.log("cave no walkable tile adjacent to ladder", {
+          ladder: targetPosition,
+          playerDistance: getDistance(position, targetPosition),
+        });
+        return false;
       }
+      bot.log("cave using ladder", {
+        position,
+        ladder: targetPosition,
+        targetZ: waypoint?.z ?? null,
+      });
       window.gameClient?.mouse?.use?.({ which: targetTile, index: 0xFF });
       state.lastStairsUseAt = now;
       state.lastPathAt = now;
       markPendingTransitionSource(targetPosition);
-      bot.log("cave used ladder tile", {
-        source: targetPosition,
-        targetZ: waypoint?.z ?? null,
-      });
       return true;
     }
 
@@ -5329,6 +5344,9 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
       }
     }
 
+    bot.log("cave floor change failed - no accessible transition tile found", {
+      fromZ: position.z, toZ: waypoint.z, waypoint,
+    });
     return false;
   }
 
@@ -5504,6 +5522,7 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
         handleFloorChange(waypoint, now);
         const newPosition = normalizePosition(bot.getPlayerPosition());
         if (newPosition && newPosition.z !== position.z) {
+          state.floorChangeStuckAt = 0;
           const bestIndex = findClosestWaypointIndex(newPosition);
           const wouldReverse = (bestIndex < state.currentIndex && state.direction === 1) ||
                                (bestIndex > state.currentIndex && state.direction === -1);
@@ -5519,6 +5538,19 @@ window.__minibiaBotBundle.installCaveModule = function installCaveModule(bot) {
                 total: route.length,
               });
             }
+          }
+        } else {
+          if (!state.floorChangeStuckAt) state.floorChangeStuckAt = now;
+          const stuckFor = now - state.floorChangeStuckAt;
+          if (stuckFor >= 5000 && (state.tickCount % 10 === 0)) {
+            bot.log("cave floor change stuck", {
+              fromZ: position.z,
+              toZ: waypoint.z,
+              stuckForMs: stuckFor,
+              position,
+              waypoint,
+              waypointIndex: state.currentIndex + 1,
+            });
           }
         }
         return;
