@@ -83,19 +83,21 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     return !!element?.closest?.("#minibia-bot-panel, #k9x-panel, #minibia-bot-style, script, style");
   }
 
-  function elementHasRedText(element) {
+  function isVisibleElement(element) {
     if (!(element instanceof Element) || isIgnoredElement(element)) return false;
-    const text = String(element.textContent || "").trim();
-    if (!text) return false;
+    const rect = element.getBoundingClientRect?.();
     const style = window.getComputedStyle(element);
-    if (isRedColor(style.color) || isRedColor(style.backgroundColor)) return true;
-    return Array.from(element.querySelectorAll?.("*") || []).some((child) => {
-      if (isIgnoredElement(child)) return false;
-      const childText = String(child.textContent || "").trim();
-      if (!childText) return false;
-      const childStyle = window.getComputedStyle(child);
-      return isRedColor(childStyle.color) || isRedColor(childStyle.backgroundColor);
-    });
+    return !!rect && rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || 1) > 0;
+  }
+
+  function elementHasOwnRedText(element) {
+    if (!isVisibleElement(element)) return false;
+    const text = String(element.textContent || "").trim();
+    if (!text || text.length > 500) return false;
+    const childText = Array.from(element.children || []).map((child) => String(child.textContent || "").trim()).join("").trim();
+    if (childText && childText.length >= text.length * 0.8) return false;
+    const style = window.getComputedStyle(element);
+    return isRedColor(style.color) || isRedColor(style.backgroundColor);
   }
 
   function getNodeText(node) { return String(node?.textContent || "").trim().replace(/\s+/g, " "); }
@@ -104,7 +106,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
   function getConsoleRoots() {
     if (config.consoleSelector) {
       try {
-        const customRoots = Array.from(document.querySelectorAll(config.consoleSelector)).filter((element) => !isIgnoredElement(element));
+        const customRoots = Array.from(document.querySelectorAll(config.consoleSelector)).filter(isVisibleElement);
         if (customRoots.length) return customRoots;
       } catch (error) {
         bot.log("red text alert console selector failed", { selector: config.consoleSelector, error: error?.message || String(error) });
@@ -113,27 +115,25 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
 
     const selectors = [
       '[id*="console" i]', '[class*="console" i]',
-      '[id*="chat" i]', '[class*="chat" i]',
-      '[id*="message" i]', '[class*="message" i]',
-      '[id*="messages" i]', '[class*="messages" i]',
-      '[id*="log" i]', '[class*="log" i]',
-      '[id*="battle" i]', '[class*="battle" i]'
+      '[id*="chat" i]', '[class*="chat" i]'
     ];
 
     const roots = Array.from(document.querySelectorAll(selectors.join(",")))
-      .filter((element) => element instanceof Element && !isIgnoredElement(element))
-      .filter((element) => String(element.textContent || "").trim().length > 0);
+      .filter(isVisibleElement)
+      .filter((element) => String(element.textContent || "").trim().length > 0)
+      .filter((element) => !element.closest?.("#minibia-bot-panel, #k9x-panel"));
 
-    return Array.from(new Set(roots));
+    const leafiest = roots.filter((element) => !roots.some((other) => other !== element && element.contains(other)));
+    return Array.from(new Set(leafiest.length ? leafiest : roots));
   }
 
   function getVisibleRedElements() {
     const found = [];
     const seen = new Set();
     for (const root of getConsoleRoots()) {
-      const candidates = [root, ...Array.from(root.querySelectorAll?.("*") || [])];
+      const candidates = Array.from(root.querySelectorAll?.("*") || []).filter(elementHasOwnRedText);
       for (const candidate of candidates) {
-        if (!seen.has(candidate) && elementHasRedText(candidate)) {
+        if (!seen.has(candidate)) {
           seen.add(candidate);
           found.push(candidate);
         }
@@ -162,14 +162,14 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
 
   function nodeIsInsideConsole(node) {
     const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    if (!(element instanceof Element) || isIgnoredElement(element)) return false;
+    if (!isVisibleElement(element)) return false;
     return getConsoleRoots().some((root) => root === element || root.contains(element));
   }
 
   function nodeHasRedText(node) {
     if (!node || !nodeIsInsideConsole(node)) return false;
-    if (node.nodeType === Node.TEXT_NODE) return !!node.parentElement && elementHasRedText(node.parentElement);
-    return node.nodeType === Node.ELEMENT_NODE && elementHasRedText(node);
+    const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    return elementHasOwnRedText(element);
   }
 
   function getRedTextFromNode(node) {
@@ -383,7 +383,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
       <div class="mb-stack">
         <label class="mb-toggle"><input type="checkbox" id="k9x-red-text-alert-enabled" /><span>Enable Red Text Alert</span></label>
         <div class="mb-small-note" id="k9x-red-text-alert-status">Alert: off</div>
-        <div class="mb-small-note">Beeps every 3 seconds for 30 seconds. Existing red text is ignored until a new red message appears.</div>
+        <div class="mb-small-note">Beeps every 3 seconds for 30 seconds. Watches only console/chat line text.</div>
       </div>`;
     parent.appendChild(section);
     const enabled = section.querySelector("#k9x-red-text-alert-enabled");
