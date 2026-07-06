@@ -17,6 +17,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     lastSeenAt: 0,
     lastNoRedAt: 0,
     audioContext: null,
+    baselineRedTextKeys: new Set(),
   };
 
   const config = Object.assign(
@@ -97,9 +98,8 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     });
   }
 
-  function getNodeText(node) {
-    return String(node?.textContent || "").trim().replace(/\s+/g, " ");
-  }
+  function getNodeText(node) { return String(node?.textContent || "").trim().replace(/\s+/g, " "); }
+  function getRedKey(element) { return getNodeText(element).toLowerCase(); }
 
   function getConsoleRoots() {
     if (config.consoleSelector) {
@@ -127,17 +127,38 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     return Array.from(new Set(roots));
   }
 
-  function findFirstVisibleRedElement() {
-    const roots = getConsoleRoots();
-    for (const root of roots) {
-      if (elementHasRedText(root)) return root;
-      const redChild = Array.from(root.querySelectorAll?.("*") || []).find(elementHasRedText);
-      if (redChild) return redChild;
+  function getVisibleRedElements() {
+    const found = [];
+    const seen = new Set();
+    for (const root of getConsoleRoots()) {
+      const candidates = [root, ...Array.from(root.querySelectorAll?.("*") || [])];
+      for (const candidate of candidates) {
+        if (!seen.has(candidate) && elementHasRedText(candidate)) {
+          seen.add(candidate);
+          found.push(candidate);
+        }
+      }
     }
-    return null;
+    return found;
   }
 
-  function hasVisibleRedText() { return !!findFirstVisibleRedElement(); }
+  function refreshBaselineRedText() {
+    const visibleKeys = new Set(getVisibleRedElements().map(getRedKey).filter(Boolean));
+    for (const key of Array.from(state.baselineRedTextKeys)) {
+      if (!visibleKeys.has(key)) state.baselineRedTextKeys.delete(key);
+    }
+    return visibleKeys;
+  }
+
+  function findFirstNewRedElement() {
+    refreshBaselineRedText();
+    return getVisibleRedElements().find((element) => {
+      const key = getRedKey(element);
+      return key && !state.baselineRedTextKeys.has(key);
+    }) || null;
+  }
+
+  function hasVisibleRedText() { return getVisibleRedElements().length > 0; }
 
   function nodeIsInsideConsole(node) {
     const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
@@ -165,6 +186,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     state.lastBeepAt = 0;
     state.lastSeenText = text;
     state.lastSeenAt = now;
+    state.baselineRedTextKeys.clear();
     bot.log("red text alert triggered", { text, beepIntervalMs: config.beepIntervalMs, alertDurationMs: config.alertDurationMs, consoleRoots: getConsoleRoots().length });
     tickAlert();
     refreshUiValues();
@@ -174,7 +196,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
   function scanForRedText() {
     if (!config.enabled || !state.running) return;
     if (state.mode === "watching") {
-      const redElement = findFirstVisibleRedElement();
+      const redElement = findFirstNewRedElement();
       if (redElement) startAlert(getNodeText(redElement));
       return;
     }
@@ -198,6 +220,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
       state.lastBeepAt = 0;
       state.mode = "waiting-clear";
       state.lastNoRedAt = 0;
+      state.baselineRedTextKeys = new Set(getVisibleRedElements().map(getRedKey).filter(Boolean));
       refreshUiValues();
       return;
     }
@@ -213,6 +236,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     const now = Date.now();
     if (hasVisibleRedText()) {
       state.lastNoRedAt = 0;
+      refreshBaselineRedText();
       return;
     }
     if (!state.lastNoRedAt) {
@@ -222,6 +246,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     if (now - state.lastNoRedAt >= positiveInt(config.clearEventAfterNoRedMs, 1500)) {
       state.mode = "watching";
       state.lastNoRedAt = 0;
+      state.baselineRedTextKeys.clear();
       refreshUiValues();
     }
   }
@@ -239,7 +264,10 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
   function inspectAddedNode(node) {
     if (!config.enabled || !state.running || state.mode !== "watching") return false;
     if (!nodeHasRedText(node)) return false;
-    return startAlert(getRedTextFromNode(node));
+    const text = getRedTextFromNode(node);
+    const key = String(text || "").toLowerCase();
+    if (key && state.baselineRedTextKeys.has(key)) return false;
+    return startAlert(text);
   }
 
   function startObserver() {
@@ -266,13 +294,14 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     updateConfig(Object.assign({}, overrides, { enabled: true, scanExistingOnStart: false }), { silent: true });
     if (state.running) return false;
     state.running = true;
-    state.mode = hasVisibleRedText() ? "waiting-clear" : "watching";
+    state.mode = "watching";
     state.alertStartedAt = 0;
     state.lastBeepAt = 0;
     state.lastNoRedAt = 0;
+    state.baselineRedTextKeys = new Set(getVisibleRedElements().map(getRedKey).filter(Boolean));
     startObserver();
     startScanTimer();
-    bot.log("red text alert started", { ...config, mode: state.mode, consoleRoots: getConsoleRoots().length });
+    bot.log("red text alert started", { ...config, mode: state.mode, consoleRoots: getConsoleRoots().length, baselineRedTextCount: state.baselineRedTextKeys.size });
     refreshUiValues();
     return true;
   }
@@ -283,6 +312,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     state.alertStartedAt = 0;
     state.lastBeepAt = 0;
     state.lastNoRedAt = 0;
+    state.baselineRedTextKeys.clear();
     stopObserver();
     stopAlertTimer();
     stopScanTimer();
@@ -315,6 +345,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     state.alertStartedAt = 0;
     state.lastBeepAt = 0;
     state.lastNoRedAt = 0;
+    state.baselineRedTextKeys.clear();
     stopAlertTimer();
     bot.log("red text alert state reset");
     refreshUiValues();
@@ -323,6 +354,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
   function status() {
     const now = Date.now();
     const remainingMs = state.mode === "beeping" && state.alertStartedAt ? Math.max(0, positiveInt(config.alertDurationMs, 30000) - (now - state.alertStartedAt)) : 0;
+    const visibleRedCount = getVisibleRedElements().length;
     return {
       running: state.running,
       config: { ...config },
@@ -332,7 +364,9 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
       lastSeenText: state.lastSeenText,
       lastSeenAt: state.lastSeenAt,
       lastBeepAt: state.lastBeepAt,
-      visibleRedTextNow: hasVisibleRedText(),
+      visibleRedTextNow: visibleRedCount > 0,
+      visibleRedCount,
+      baselineRedTextCount: state.baselineRedTextKeys.size,
       consoleRootCount: getConsoleRoots().length,
     };
   }
@@ -349,7 +383,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
       <div class="mb-stack">
         <label class="mb-toggle"><input type="checkbox" id="k9x-red-text-alert-enabled" /><span>Enable Red Text Alert</span></label>
         <div class="mb-small-note" id="k9x-red-text-alert-status">Alert: off</div>
-        <div class="mb-small-note">Beeps every 3 seconds for 30 seconds. Watches only console/chat areas.</div>
+        <div class="mb-small-note">Beeps every 3 seconds for 30 seconds. Existing red text is ignored until a new red message appears.</div>
       </div>`;
     parent.appendChild(section);
     const enabled = section.querySelector("#k9x-red-text-alert-enabled");
@@ -367,11 +401,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
         ? "Alert: off"
         : current.alertActive
           ? `Alert: beeping (${Math.ceil(current.remainingMs / 1000)}s left)`
-          : current.mode === "waiting-clear"
-            ? "Alert: waiting for console red text to clear"
-            : current.visibleRedTextNow
-              ? "Alert: console red text visible"
-              : `Alert: watching (${current.consoleRootCount} console areas)`;
+          : `Alert: watching (${current.consoleRootCount} console areas)`;
     }
   }
 
