@@ -18,6 +18,7 @@
     "src/modules/red-text-alert.js",
     "src/modules/cave.js",
     "src/modules/cave-forward-loop.js",
+    "src/modules/cave-arrow-keys.js",
     "src/modules/equip-ring.js",
     "src/modules/auto-eat.js",
     "src/modules/talk.js",
