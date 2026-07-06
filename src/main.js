@@ -7,6 +7,7 @@
     ["magicShield", "minibiaBot.magicShield.config"],
     ["attack", "minibiaBot.attack.config"],
     ["attackAoe", "minibiaBot.attackAoe.config"],
+    ["attackExclude", "minibiaBot.attackExclude.config"],
     ["redTextAlert", "minibiaBot.redTextAlert.config"],
     ["cave", "minibiaBot.cave.config"],
     ["equipRing", "minibiaBot.equipRing.config"],
@@ -52,6 +53,7 @@
     currentBundle.installAutoInvisibleModule(bot);
     currentBundle.installAutoMagicShieldModule(bot);
     currentBundle.installAutoAttackModule(bot);
+    currentBundle.installAutoAttackExcludeModule?.(bot);
     currentBundle.installAutoAttackAoeModule?.(bot);
     currentBundle.installRedTextAlertModule?.(bot);
     currentBundle.installCaveModule(bot);
@@ -76,6 +78,7 @@
       invisible: bot.invisible.status(),
       magicShield: bot.magicShield.status(),
       attack: bot.attack.status(),
+      attackExclude: bot.attackExclude?.status?.() || null,
       attackAoe: bot.attackAoe?.status?.() || null,
       redTextAlert: bot.redTextAlert?.status?.() || null,
       cave: bot.cave.status(),
@@ -91,9 +94,11 @@
       branch: bot.version.branch,
       commit: bot.version.commit,
       buildDate: bot.version.date,
-      modules: ["pz", "xray", "panic", "rune", "heal", "invisible", "magicShield", "attack", "attackAoe", "redTextAlert", "cave", "equipRing", "eat", "talk", "ui"],
+      modules: ["pz", "xray", "panic", "rune", "heal", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "redTextAlert", "cave", "equipRing", "eat", "talk", "ui"],
     });
     console.log("minibiaBot.reload()");
+    console.log("minibiaBot.attackExclude.addName(\"monster name\")");
+    console.log("minibiaBot.attackExclude.removeName(\"monster name\")");
     console.log("minibiaBot.attackAoe.start({ spellHotbarSlot: 5, minMonsters: 3, squareRange: 3 })");
     console.log("minibiaBot.attackAoe.stop()");
     console.log("minibiaBot.redTextAlert.start()");
