@@ -90,18 +90,14 @@ window.__minibiaBotBundle.installWaypointProfilesModule = function installWaypoi
       entry.name.toLowerCase() === requested.toLowerCase() || entry.file.toLowerCase() === requested.toLowerCase()
     );
 
-    if (!profile) {
-      throw new Error(`Waypoint profile not found: ${requested}`);
-    }
+    if (!profile) throw new Error(`Waypoint profile not found: ${requested}`);
 
     const data = await fetchJson(`waypoint-profiles/${profile.file}`);
     const route = normalizeRoute(data.route || data.waypoints);
     const transitions = normalizeTransitions(data.transitions);
     const profileName = normalizeName(data.name || profile.name);
 
-    if (!route.length) {
-      throw new Error(`Waypoint profile has no valid waypoints: ${profile.name}`);
-    }
+    if (!route.length) throw new Error(`Waypoint profile has no valid waypoints: ${profile.name}`);
 
     bot.cave?.stop?.();
     bot.cave?.createPreset?.(profileName);
@@ -143,11 +139,41 @@ window.__minibiaBotBundle.installWaypointProfilesModule = function installWaypoi
     };
   }
 
+  function getMount(panel) {
+    return panel.querySelector(".mb-side-column") ||
+      panel.querySelector(".mb-main-column") ||
+      panel.querySelector(".mb-body") ||
+      panel;
+  }
+
+  function moveSectionToTop(section, panel) {
+    const mount = getMount(panel);
+    const excludeSection = document.getElementById("minibia-bot-auto-attack-exclude-section");
+    const redTextSection = document.getElementById("k9x-red-text-alert-section");
+
+    if (excludeSection && excludeSection.parentElement === mount) {
+      excludeSection.insertAdjacentElement("afterend", section);
+      return;
+    }
+
+    if (redTextSection && redTextSection.parentElement === mount) {
+      redTextSection.insertAdjacentElement("afterend", section);
+      return;
+    }
+
+    mount.insertBefore(section, mount.firstElementChild || null);
+  }
+
   function ensureUi() {
     const panel = document.getElementById("minibia-bot-panel") || document.getElementById("k9x-panel");
-    if (!panel || document.getElementById("minibia-bot-waypoint-profiles-section")) return;
+    if (!panel) return;
 
-    const mount = panel.querySelector(".mb-cave-column") || panel.querySelector(".mb-main-column") || panel.querySelector(".mb-body") || panel;
+    const existing = document.getElementById("minibia-bot-waypoint-profiles-section");
+    if (existing) {
+      moveSectionToTop(existing, panel);
+      return;
+    }
+
     const section = document.createElement("div");
     section.className = "mb-section mb-column-section";
     section.id = "minibia-bot-waypoint-profiles-section";
@@ -161,7 +187,7 @@ window.__minibiaBotBundle.installWaypointProfilesModule = function installWaypoi
         <div class="mb-small-note" id="minibia-bot-waypoint-profiles-status">GitHub routes: not loaded</div>
       </div>`;
 
-    mount.appendChild(section);
+    moveSectionToTop(section, panel);
 
     section.querySelector("#minibia-bot-waypoint-profiles-refresh")?.addEventListener("click", () => refreshManifest());
     section.querySelector("#minibia-bot-waypoint-profiles-load")?.addEventListener("click", async () => {
@@ -214,9 +240,7 @@ window.__minibiaBotBundle.installWaypointProfilesModule = function installWaypoi
     });
 
     select.disabled = false;
-    if (previous && Array.from(select.options).some((option) => option.value === previous)) {
-      select.value = previous;
-    }
+    if (previous && Array.from(select.options).some((option) => option.value === previous)) select.value = previous;
   }
 
   function setStatusText(text) {
