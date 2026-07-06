@@ -10,6 +10,7 @@
     ["attackExclude", "minibiaBot.attackExclude.config"],
     ["redTextAlert", "minibiaBot.redTextAlert.config"],
     ["cave", "minibiaBot.cave.config"],
+    ["caveForwardLoop", "minibiaBot.caveForwardLoop.config"],
     ["equipRing", "minibiaBot.equipRing.config"],
     ["eat", "minibiaBot.eat.config"],
     ["talk", "minibiaBot.talk.config"],
@@ -57,6 +58,7 @@
     currentBundle.installAutoAttackAoeModule?.(bot);
     currentBundle.installRedTextAlertModule?.(bot);
     currentBundle.installCaveModule(bot);
+    currentBundle.installCaveForwardLoopModule?.(bot);
     currentBundle.installEquipRingModule(bot);
     currentBundle.installAutoEatModule(bot);
     currentBundle.installTalkModule(bot);
@@ -82,6 +84,7 @@
       attackAoe: bot.attackAoe?.status?.() || null,
       redTextAlert: bot.redTextAlert?.status?.() || null,
       cave: bot.cave.status(),
+      caveForwardLoop: bot.caveForwardLoop?.status?.() || null,
       equipRing: bot.equipRing.status(),
       eat: bot.eat.status(),
       talk: bot.talk.status(),
@@ -94,7 +97,7 @@
       branch: bot.version.branch,
       commit: bot.version.commit,
       buildDate: bot.version.date,
-      modules: ["pz", "xray", "panic", "rune", "heal", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "redTextAlert", "cave", "equipRing", "eat", "talk", "ui"],
+      modules: ["pz", "xray", "panic", "rune", "heal", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "redTextAlert", "cave", "caveForwardLoop", "equipRing", "eat", "talk", "ui"],
     });
     console.log("minibiaBot.reload()");
     console.log("minibiaBot.attackExclude.addName(\"monster name\")");
