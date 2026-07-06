@@ -9,6 +9,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     observer: null,
     alertTimerId: null,
     uiTimerId: null,
+    forgetTimerId: null,
     alertStartedAt: 0,
     lastBeepAt: 0,
     lastSeenText: "",
@@ -76,7 +77,40 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
   function getNodeText(node) { return String(node?.textContent || "").trim().replace(/\s+/g, " "); }
   function getRedTextKey(text) { return String(text || "").trim().replace(/\s+/g, " ").toLowerCase(); }
 
+  function getVisibleRedTextKeys() {
+    const keys = new Set();
+    const elements = Array.from(document.body?.querySelectorAll?.("*") || []);
+
+    elements.forEach((element) => {
+      if (!elementHasRedText(element)) return;
+      const key = getRedTextKey(getNodeText(element));
+      if (key) keys.add(key);
+    });
+
+    return keys;
+  }
+
+  function forgetDisappearedMessages() {
+    const visibleKeys = getVisibleRedTextKeys();
+    let changed = false;
+
+    Array.from(state.seenRedTextKeys).forEach((key) => {
+      if (!visibleKeys.has(key)) {
+        state.seenRedTextKeys.delete(key);
+        changed = true;
+      }
+    });
+
+    if (!visibleKeys.size) {
+      state.seenRedNodes = new WeakSet();
+    }
+
+    if (changed) refreshUiValues();
+  }
+
   function shouldIgnoreDuplicate(node, text, now = Date.now()) {
+    forgetDisappearedMessages();
+
     const key = getRedTextKey(text);
     if (!key) return true;
 
@@ -144,7 +178,10 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
 
   function startObserver() {
     stopObserver();
-    state.observer = new MutationObserver((mutations) => mutations.forEach((mutation) => mutation.addedNodes.forEach(inspectNode)));
+    state.observer = new MutationObserver((mutations) => {
+      forgetDisappearedMessages();
+      mutations.forEach((mutation) => mutation.addedNodes.forEach(inspectNode));
+    });
     state.observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
   }
 
@@ -153,11 +190,22 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     state.observer = null;
   }
 
+  function startForgetTimer() {
+    stopForgetTimer();
+    state.forgetTimerId = window.setInterval(forgetDisappearedMessages, 1000);
+  }
+
+  function stopForgetTimer() {
+    if (state.forgetTimerId != null) window.clearInterval(state.forgetTimerId);
+    state.forgetTimerId = null;
+  }
+
   function start(overrides = {}) {
     updateConfig(Object.assign({}, overrides, { enabled: true, scanExistingOnStart: false }), { silent: true });
     if (state.running) return false;
     state.running = true;
     startObserver();
+    startForgetTimer();
     bot.log("red text alert started", { ...config });
     refreshUiValues();
     return true;
@@ -169,6 +217,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     state.lastBeepAt = 0;
     stopObserver();
     stopAlertTimer();
+    stopForgetTimer();
     if (options.persistEnabled !== false) { config.enabled = false; persistConfig(); }
     bot.log("red text alert stopped");
     refreshUiValues();
@@ -193,6 +242,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
   }
 
   function status() {
+    forgetDisappearedMessages();
     const now = Date.now();
     const remainingMs = state.alertStartedAt ? Math.max(0, positiveInt(config.alertDurationMs, 30000) - (now - state.alertStartedAt)) : 0;
     return { running: state.running, config: { ...config }, alertActive: remainingMs > 0, remainingMs, lastSeenText: state.lastSeenText, lastSeenAt: state.lastSeenAt, lastBeepAt: state.lastBeepAt, seenMessageCount: state.seenRedTextKeys.size };
@@ -209,15 +259,12 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
       <div class="mb-label">Red Text Alert</div>
       <div class="mb-stack">
         <label class="mb-toggle"><input type="checkbox" id="k9x-red-text-alert-enabled" /><span>Enable Red Text Alert</span></label>
-        <button type="button" class="mb-small-button" id="k9x-red-text-alert-reset-seen">Reset Seen Red Text</button>
         <div class="mb-small-note" id="k9x-red-text-alert-status">Alert: off</div>
-        <div class="mb-small-note">Beeps when a new red console message first appears. Existing/re-rendered red text will not restart it.</div>
+        <div class="mb-small-note">Beeps when a new red console message first appears. If the message disappears, it can alert again next time.</div>
       </div>`;
     parent.appendChild(section);
     const enabled = section.querySelector("#k9x-red-text-alert-enabled");
-    const reset = section.querySelector("#k9x-red-text-alert-reset-seen");
     enabled?.addEventListener("change", () => enabled.checked ? start() : stop());
-    reset?.addEventListener("click", () => { resetSeenMessages(); refreshUiValues(); });
     refreshUiValues();
   }
 
@@ -226,7 +273,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     const label = document.getElementById("k9x-red-text-alert-status");
     const current = status();
     if (enabled) enabled.checked = !!state.running;
-    if (label) label.textContent = !state.running ? "Alert: off" : current.alertActive ? `Alert: beeping (${Math.ceil(current.remainingMs / 1000)}s left)` : `Alert: watching (${current.seenMessageCount} seen)`;
+    if (label) label.textContent = !state.running ? "Alert: off" : current.alertActive ? `Alert: beeping (${Math.ceil(current.remainingMs / 1000)}s left)` : `Alert: watching (${current.seenMessageCount} visible seen)`;
   }
 
   function destroy() {
