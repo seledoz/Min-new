@@ -23,8 +23,24 @@
     "src/main.js",
   ];
 
+  function installUiCompatibilityShim() {
+    if (document.__minNewUiCompatibilityShimInstalled) {
+      return;
+    }
+
+    const originalGetElementById = document.getElementById.bind(document);
+    document.getElementById = function getElementByIdWithMinNewCompat(id) {
+      if (id === "k9x-panel") {
+        return originalGetElementById("minibia-bot-panel") || originalGetElementById(id);
+      }
+      return originalGetElementById(id);
+    };
+
+    document.__minNewUiCompatibilityShimInstalled = true;
+  }
+
   async function loadSourceFile(path) {
-    const response = await fetch(`${rawBaseUrl}/${path}`, { cache: "no-store" });
+    const response = await fetch(`${rawBaseUrl}/${path}?t=${Date.now()}`, { cache: "no-store" });
     if (!response.ok) {
       throw new Error(`Failed to load ${path}: HTTP ${response.status}`);
     }
@@ -42,6 +58,7 @@
 
   async function loadBot() {
     console.log("[minibia-bot] loading source bundle", { repository, ref });
+    installUiCompatibilityShim();
     window.__minibiaBotBundle = {};
 
     for (const file of sourceFiles) {
