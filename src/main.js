@@ -60,7 +60,6 @@
     currentBundle.installCaveModule(bot);
     currentBundle.installCaveForwardLoopModule?.(bot);
     currentBundle.installCaveArrowKeysModule?.(bot);
-    currentBundle.installWaypointProfilesModule?.(bot);
     currentBundle.installEquipRingModule(bot);
     currentBundle.installAutoEatModule(bot);
     currentBundle.installTalkModule(bot);
@@ -68,6 +67,7 @@
 
     bot.ui.inject();
     bot.caveArrowKeys?.ensureDropdownOption?.();
+    document.getElementById("minibia-bot-waypoint-profiles-section")?.remove();
     bot.start = (...args) => bot.rune.start(...args);
     bot.stop = (...args) => bot.rune.stop(...args);
     bot.reload = () => window.minibiaBotReload?.();
@@ -89,7 +89,6 @@
       cave: bot.cave.status(),
       caveForwardLoop: bot.caveForwardLoop?.status?.() || null,
       caveArrowKeys: bot.caveArrowKeys?.status?.() || null,
-      waypointProfiles: bot.waypointProfiles?.status?.() || null,
       equipRing: bot.equipRing.status(),
       eat: bot.eat.status(),
       talk: bot.talk.status(),
@@ -102,12 +101,9 @@
       branch: bot.version.branch,
       commit: bot.version.commit,
       buildDate: bot.version.date,
-      modules: ["pz", "xray", "panic", "rune", "heal", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "waypointProfiles", "equipRing", "eat", "talk", "ui"],
+      modules: ["pz", "xray", "panic", "rune", "heal", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "equipRing", "eat", "talk", "ui"],
     });
     console.log("minibiaBot.reload()");
-    console.log("minibiaBot.waypointProfiles.refreshManifest()");
-    console.log("minibiaBot.waypointProfiles.loadProfile(\"profile-file.json\")");
-    console.log("minibiaBot.waypointProfiles.exportCurrentRoute()");
     console.log("minibiaBot.attackExclude.addName(\"monster name\")");
     console.log("minibiaBot.attackExclude.removeName(\"monster name\")");
     console.log("minibiaBot.attackAoe.start({ spellHotbarSlot: 5, minMonsters: 3, squareRange: 3 })");
