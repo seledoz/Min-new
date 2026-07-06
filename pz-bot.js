@@ -41,6 +41,26 @@
     document.__minNewUiCompatibilityShimInstalled = true;
   }
 
+  function installPanelTitleHideStyle() {
+    if (document.getElementById("minibia-bot-hide-title-style")) {
+      return;
+    }
+
+    const style = document.createElement("style");
+    style.id = "minibia-bot-hide-title-style";
+    style.textContent = `
+      #minibia-bot-panel .mb-title {
+        font-size: 0 !important;
+        min-height: 16px;
+        flex: 1 1 auto;
+      }
+      #minibia-bot-panel .mb-title .mb-version {
+        display: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   async function loadSourceFile(path) {
     const response = await fetch(`${rawBaseUrl}/${path}?t=${Date.now()}`, { cache: "no-store" });
     if (!response.ok) {
@@ -61,11 +81,14 @@
   async function loadBot() {
     console.log("[minibia-bot] loading source bundle", { repository, ref });
     installUiCompatibilityShim();
+    installPanelTitleHideStyle();
     window.__minibiaBotBundle = {};
 
     for (const file of sourceFiles) {
       await loadSourceFile(file);
     }
+
+    installPanelTitleHideStyle();
   }
 
   loadBot().catch((error) => {
