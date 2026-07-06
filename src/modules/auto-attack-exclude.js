@@ -124,18 +124,37 @@ window.__minibiaBotBundle.installAutoAttackExcludeModule = function installAutoA
     };
   }
 
-  function findAutoAttackAnchor(panel) {
-    return document.getElementById("minibia-bot-auto-attack-enabled")?.closest(".mb-section") ||
-      document.getElementById("minibia-bot-auto-attack-enabled")?.parentElement ||
-      panel.querySelector(".mb-cave-column") ||
-      panel.querySelector(".mb-main-column") ||
-      panel.querySelector(".mb-body") ||
-      panel;
+  function removeTalkPanelSection() {
+    const talkSection = document.getElementById("minibia-bot-talk-enabled")?.closest(".mb-section") ||
+      document.getElementById("minibia-bot-talk-api-key")?.closest(".mb-section") ||
+      document.getElementById("minibia-bot-talk-prompt")?.closest(".mb-section");
+    if (talkSection) {
+      talkSection.remove();
+      return true;
+    }
+    return false;
+  }
+
+  function findSideColumnMount(panel) {
+    const sideColumn = panel.querySelector(".mb-side-column");
+    if (sideColumn) return sideColumn;
+    return panel.querySelector(".mb-main-column") || panel.querySelector(".mb-body") || panel;
   }
 
   function ensureUi() {
     const panel = document.getElementById("minibia-bot-panel") || document.getElementById("k9x-panel");
-    if (!panel || document.getElementById("minibia-bot-auto-attack-exclude-section")) return;
+    if (!panel) return;
+
+    removeTalkPanelSection();
+
+    const existing = document.getElementById("minibia-bot-auto-attack-exclude-section");
+    const mount = findSideColumnMount(panel);
+    if (existing) {
+      if (existing.parentElement !== mount) {
+        mount.appendChild(existing);
+      }
+      return;
+    }
 
     const section = document.createElement("div");
     section.className = "mb-section mb-column-section";
@@ -152,19 +171,11 @@ window.__minibiaBotBundle.installAutoAttackExcludeModule = function installAutoA
           <button type="button" class="mb-small-button" id="minibia-bot-auto-attack-exclude-add">Add</button>
         </div>
         <div class="mb-list" id="minibia-bot-auto-attack-exclude-list"></div>
-        <div class="mb-small-note">Names are not case-sensitive. Excluded monsters are ignored by Auto Attack and AoE.</div>
+        <div class="mb-small-note">Ignored by Auto Attack and AoE.</div>
       </div>
     `;
 
-    const anchor = findAutoAttackAnchor(panel);
-    const aoeSection = document.getElementById("minibia-bot-auto-attack-aoe-section");
-    if (aoeSection?.parentElement) {
-      aoeSection.insertAdjacentElement("afterend", section);
-    } else if (anchor?.parentElement) {
-      anchor.insertAdjacentElement("afterend", section);
-    } else {
-      (panel.querySelector(".mb-cave-column") || panel.querySelector(".mb-body") || panel).appendChild(section);
-    }
+    mount.appendChild(section);
 
     const enabledInput = section.querySelector("#minibia-bot-auto-attack-exclude-enabled");
     const nameInput = section.querySelector("#minibia-bot-auto-attack-exclude-input");
