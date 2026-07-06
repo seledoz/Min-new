@@ -12,6 +12,7 @@
     "src/modules/heal.js",
     "src/modules/auto-invisible.js",
     "src/modules/auto-magic-shield.js",
+    "src/modules/auto-attack-exclude.js",
     "src/modules/auto-attack.js",
     "src/modules/auto-attack-aoe.js",
     "src/modules/red-text-alert.js",
