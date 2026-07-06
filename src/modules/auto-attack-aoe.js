@@ -136,35 +136,49 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
     return { running: state.running, config: { ...config }, nearbyMonsterCount: monsters.length, lastCastMonsterCount: state.lastCastMonsterCount, ready: canCast(Date.now()) };
   }
 
+  function findAutoAttackAnchor(panel) {
+    return document.getElementById("minibia-bot-auto-attack-enabled")?.closest(".mb-section") ||
+      document.getElementById("minibia-bot-auto-attack-enabled")?.parentElement ||
+      panel.querySelector(".mb-main-column") ||
+      panel.querySelector(".mb-body") ||
+      panel;
+  }
+
   function ensureUi() {
-    const panel = document.getElementById("k9x-panel");
-    if (!panel || document.getElementById("k9x-auto-attack-aoe-section")) return;
-    const parent = panel.querySelector(".mb-talk-column") || panel.querySelector(".mb-main-column") || panel.querySelector(".mb-body") || panel;
+    const panel = document.getElementById("minibia-bot-panel") || document.getElementById("k9x-panel");
+    if (!panel || document.getElementById("minibia-bot-auto-attack-aoe-section")) return;
     const section = document.createElement("div");
     section.className = "mb-section mb-column-section";
-    section.id = "k9x-auto-attack-aoe-section";
+    section.id = "minibia-bot-auto-attack-aoe-section";
     section.innerHTML = `
       <div class="mb-label">AoE Spell</div>
       <div class="mb-stack">
-        <label class="mb-toggle"><input type="checkbox" id="k9x-auto-attack-aoe-enabled" /><span>Enable AoE Spell</span></label>
+        <label class="mb-toggle"><input type="checkbox" id="minibia-bot-auto-attack-aoe-enabled" /><span>Enable AoE Spell</span></label>
         <div class="mb-field-grid">
-          <label class="mb-field"><span class="mb-field-label">Spell Hotkey (1-12)</span><input type="number" id="k9x-auto-attack-aoe-hotkey" min="1" max="12" placeholder="5" /></label>
-          <label class="mb-field"><span class="mb-field-label">Min Monsters</span><input type="number" id="k9x-auto-attack-aoe-monsters" min="1" placeholder="3" /></label>
-          <label class="mb-field"><span class="mb-field-label">Square Range</span><input type="number" id="k9x-auto-attack-aoe-range" min="1" placeholder="3" /></label>
-          <label class="mb-field"><span class="mb-field-label">Cooldown MS</span><input type="number" id="k9x-auto-attack-aoe-cooldown" min="0" placeholder="2000" /></label>
+          <label class="mb-field"><span class="mb-field-label">Spell Hotkey</span><input type="number" id="minibia-bot-auto-attack-aoe-hotkey" min="1" max="12" placeholder="5" /></label>
+          <label class="mb-field"><span class="mb-field-label">Min Monsters</span><input type="number" id="minibia-bot-auto-attack-aoe-monsters" min="1" placeholder="3" /></label>
+          <label class="mb-field"><span class="mb-field-label">Range</span><input type="number" id="minibia-bot-auto-attack-aoe-range" min="1" placeholder="3" /></label>
+          <label class="mb-field"><span class="mb-field-label">Cooldown MS</span><input type="number" id="minibia-bot-auto-attack-aoe-cooldown" min="0" placeholder="2000" /></label>
         </div>
-        <label class="mb-toggle"><input type="checkbox" id="k9x-auto-attack-aoe-require-attack" /><span>Only while Auto Attack runs</span></label>
-        <label class="mb-toggle"><input type="checkbox" id="k9x-auto-attack-aoe-respect-filters" /><span>Use target filters</span></label>
-        <div class="mb-small-note" id="k9x-auto-attack-aoe-status">AoE: idle</div>
+        <label class="mb-toggle"><input type="checkbox" id="minibia-bot-auto-attack-aoe-require-attack" /><span>Only while Auto Attack runs</span></label>
+        <label class="mb-toggle"><input type="checkbox" id="minibia-bot-auto-attack-aoe-respect-filters" /><span>Use target filters</span></label>
+        <div class="mb-small-note" id="minibia-bot-auto-attack-aoe-status">AoE: idle</div>
       </div>`;
-    parent.appendChild(section);
-    const enabled = section.querySelector("#k9x-auto-attack-aoe-enabled");
-    const hotkey = section.querySelector("#k9x-auto-attack-aoe-hotkey");
-    const monsters = section.querySelector("#k9x-auto-attack-aoe-monsters");
-    const range = section.querySelector("#k9x-auto-attack-aoe-range");
-    const cooldown = section.querySelector("#k9x-auto-attack-aoe-cooldown");
-    const requireAttack = section.querySelector("#k9x-auto-attack-aoe-require-attack");
-    const filters = section.querySelector("#k9x-auto-attack-aoe-respect-filters");
+
+    const anchor = findAutoAttackAnchor(panel);
+    if (anchor && anchor.parentElement) {
+      anchor.insertAdjacentElement("afterend", section);
+    } else {
+      (panel.querySelector(".mb-main-column") || panel.querySelector(".mb-body") || panel).appendChild(section);
+    }
+
+    const enabled = section.querySelector("#minibia-bot-auto-attack-aoe-enabled");
+    const hotkey = section.querySelector("#minibia-bot-auto-attack-aoe-hotkey");
+    const monsters = section.querySelector("#minibia-bot-auto-attack-aoe-monsters");
+    const range = section.querySelector("#minibia-bot-auto-attack-aoe-range");
+    const cooldown = section.querySelector("#minibia-bot-auto-attack-aoe-cooldown");
+    const requireAttack = section.querySelector("#minibia-bot-auto-attack-aoe-require-attack");
+    const filters = section.querySelector("#minibia-bot-auto-attack-aoe-respect-filters");
     enabled?.addEventListener("change", () => enabled.checked ? start() : stop());
     hotkey?.addEventListener("change", () => updateConfig({ spellHotbarSlot: hotkey.value }));
     monsters?.addEventListener("change", () => updateConfig({ minMonsters: monsters.value }));
@@ -176,14 +190,14 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
   }
 
   function refreshUiValues() {
-    const enabled = document.getElementById("k9x-auto-attack-aoe-enabled");
-    const hotkey = document.getElementById("k9x-auto-attack-aoe-hotkey");
-    const monsters = document.getElementById("k9x-auto-attack-aoe-monsters");
-    const range = document.getElementById("k9x-auto-attack-aoe-range");
-    const cooldown = document.getElementById("k9x-auto-attack-aoe-cooldown");
-    const requireAttack = document.getElementById("k9x-auto-attack-aoe-require-attack");
-    const filters = document.getElementById("k9x-auto-attack-aoe-respect-filters");
-    const statusLabel = document.getElementById("k9x-auto-attack-aoe-status");
+    const enabled = document.getElementById("minibia-bot-auto-attack-aoe-enabled");
+    const hotkey = document.getElementById("minibia-bot-auto-attack-aoe-hotkey");
+    const monsters = document.getElementById("minibia-bot-auto-attack-aoe-monsters");
+    const range = document.getElementById("minibia-bot-auto-attack-aoe-range");
+    const cooldown = document.getElementById("minibia-bot-auto-attack-aoe-cooldown");
+    const requireAttack = document.getElementById("minibia-bot-auto-attack-aoe-require-attack");
+    const filters = document.getElementById("minibia-bot-auto-attack-aoe-respect-filters");
+    const statusLabel = document.getElementById("minibia-bot-auto-attack-aoe-status");
     if (enabled) enabled.checked = !!state.running;
     if (hotkey) hotkey.value = config.spellHotbarSlot || "";
     if (monsters) monsters.value = config.minMonsters;
@@ -197,7 +211,7 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
   function destroy() {
     stop({ persistEnabled: false });
     if (state.uiTimerId != null) window.clearInterval(state.uiTimerId);
-    document.getElementById("k9x-auto-attack-aoe-section")?.remove();
+    document.getElementById("minibia-bot-auto-attack-aoe-section")?.remove();
   }
 
   bot.attackAoe = { start, stop, status, updateConfig, triggerSpell, destroy, config };
