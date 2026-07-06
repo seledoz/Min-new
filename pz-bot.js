@@ -19,7 +19,6 @@
     "src/modules/cave.js",
     "src/modules/cave-forward-loop.js",
     "src/modules/cave-arrow-keys.js",
-    "src/modules/waypoint-profiles.js",
     "src/modules/equip-ring.js",
     "src/modules/auto-eat.js",
     "src/modules/talk.js",
@@ -53,6 +52,7 @@
     let attempts = 0;
     const timerId = window.setInterval(() => {
       blankPanelTitle();
+      document.getElementById("minibia-bot-waypoint-profiles-section")?.remove();
       attempts += 1;
       if (attempts >= 20) window.clearInterval(timerId);
     }, 250);
