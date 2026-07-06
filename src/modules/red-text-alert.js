@@ -14,12 +14,14 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     lastSeenText: "",
     lastSeenAt: 0,
     audioContext: null,
+    seenRedTextKeys: new Set(),
+    seenRedNodes: new WeakSet(),
   };
 
   const config = Object.assign({ enabled: false, beepIntervalMs: 5000, alertDurationMs: 30000, scanExistingOnStart: false }, bot.storage.get(configStorageKey, {}) || {});
   config.beepIntervalMs = positiveInt(config.beepIntervalMs, 5000);
   config.alertDurationMs = positiveInt(config.alertDurationMs, 30000);
-  config.scanExistingOnStart = !!config.scanExistingOnStart;
+  config.scanExistingOnStart = false;
 
   function persistConfig() { bot.storage.set(configStorageKey, { ...config }); }
   function positiveInt(value, fallback) { const n = Math.trunc(Number(value)); return Number.isFinite(n) && n > 0 ? n : fallback; }
@@ -72,16 +74,27 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
   }
 
   function getNodeText(node) { return String(node?.textContent || "").trim().replace(/\s+/g, " "); }
+  function getRedTextKey(text) { return String(text || "").trim().replace(/\s+/g, " ").toLowerCase(); }
 
-  function shouldIgnoreDuplicate(text, now = Date.now()) {
-    if (!text) return true;
-    if (text === state.lastSeenText && now - state.lastSeenAt < 1500) return true;
+  function shouldIgnoreDuplicate(node, text, now = Date.now()) {
+    const key = getRedTextKey(text);
+    if (!key) return true;
+
+    if (node && typeof node === "object") {
+      if (state.seenRedNodes.has(node)) return true;
+      state.seenRedNodes.add(node);
+    }
+
+    if (state.seenRedTextKeys.has(key)) return true;
+    state.seenRedTextKeys.add(key);
+
     state.lastSeenText = text;
     state.lastSeenAt = now;
     return false;
   }
 
   function startAlert(now = Date.now(), text = "") {
+    if (state.alertStartedAt) return;
     state.alertStartedAt = now;
     state.lastBeepAt = 0;
     bot.log("red text alert triggered", { text });
@@ -92,16 +105,16 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     if (!config.enabled || !state.running || !node) return false;
     if (node.nodeType === Node.TEXT_NODE) {
       const parent = node.parentElement;
-      if (parent && elementHasRedText(parent)) return handleRedText(getNodeText(parent));
+      if (parent && elementHasRedText(parent)) return handleRedText(parent, getNodeText(parent));
       return false;
     }
     if (node.nodeType !== Node.ELEMENT_NODE || !elementHasRedText(node)) return false;
-    return handleRedText(getNodeText(node));
+    return handleRedText(node, getNodeText(node));
   }
 
-  function handleRedText(text = "") {
+  function handleRedText(node, text = "") {
     const now = Date.now();
-    if (shouldIgnoreDuplicate(text, now)) return false;
+    if (shouldIgnoreDuplicate(node, text, now)) return false;
     startAlert(now, text);
     return true;
   }
@@ -140,14 +153,11 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     state.observer = null;
   }
 
-  function scanExistingRedText() { Array.from(document.body?.querySelectorAll?.("*") || []).some((element) => inspectNode(element)); }
-
   function start(overrides = {}) {
-    updateConfig(Object.assign({}, overrides, { enabled: true }), { silent: true });
+    updateConfig(Object.assign({}, overrides, { enabled: true, scanExistingOnStart: false }), { silent: true });
     if (state.running) return false;
     state.running = true;
     startObserver();
-    if (config.scanExistingOnStart) scanExistingRedText();
     bot.log("red text alert started", { ...config });
     refreshUiValues();
     return true;
@@ -168,17 +178,24 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
   function updateConfig(nextConfig = {}, options = {}) {
     if (Object.prototype.hasOwnProperty.call(nextConfig, "beepIntervalMs")) nextConfig.beepIntervalMs = positiveInt(nextConfig.beepIntervalMs, config.beepIntervalMs || 5000);
     if (Object.prototype.hasOwnProperty.call(nextConfig, "alertDurationMs")) nextConfig.alertDurationMs = positiveInt(nextConfig.alertDurationMs, config.alertDurationMs || 30000);
-    if (Object.prototype.hasOwnProperty.call(nextConfig, "scanExistingOnStart")) nextConfig.scanExistingOnStart = !!nextConfig.scanExistingOnStart;
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "scanExistingOnStart")) nextConfig.scanExistingOnStart = false;
     Object.assign(config, nextConfig);
+    config.scanExistingOnStart = false;
     persistConfig();
     if (!options.silent) refreshUiValues();
     return { ...config };
   }
 
+  function resetSeenMessages() {
+    state.seenRedTextKeys.clear();
+    state.seenRedNodes = new WeakSet();
+    bot.log("red text alert seen messages reset");
+  }
+
   function status() {
     const now = Date.now();
     const remainingMs = state.alertStartedAt ? Math.max(0, positiveInt(config.alertDurationMs, 30000) - (now - state.alertStartedAt)) : 0;
-    return { running: state.running, config: { ...config }, alertActive: remainingMs > 0, remainingMs, lastSeenText: state.lastSeenText, lastSeenAt: state.lastSeenAt, lastBeepAt: state.lastBeepAt };
+    return { running: state.running, config: { ...config }, alertActive: remainingMs > 0, remainingMs, lastSeenText: state.lastSeenText, lastSeenAt: state.lastSeenAt, lastBeepAt: state.lastBeepAt, seenMessageCount: state.seenRedTextKeys.size };
   }
 
   function ensureUi() {
@@ -192,12 +209,15 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
       <div class="mb-label">Red Text Alert</div>
       <div class="mb-stack">
         <label class="mb-toggle"><input type="checkbox" id="k9x-red-text-alert-enabled" /><span>Enable Red Text Alert</span></label>
+        <button type="button" class="mb-small-button" id="k9x-red-text-alert-reset-seen">Reset Seen Red Text</button>
         <div class="mb-small-note" id="k9x-red-text-alert-status">Alert: off</div>
-        <div class="mb-small-note">Beeps every 5 seconds for 30 seconds when new red console text appears.</div>
+        <div class="mb-small-note">Beeps when a new red console message first appears. Existing/re-rendered red text will not restart it.</div>
       </div>`;
     parent.appendChild(section);
     const enabled = section.querySelector("#k9x-red-text-alert-enabled");
+    const reset = section.querySelector("#k9x-red-text-alert-reset-seen");
     enabled?.addEventListener("change", () => enabled.checked ? start() : stop());
+    reset?.addEventListener("click", () => { resetSeenMessages(); refreshUiValues(); });
     refreshUiValues();
   }
 
@@ -206,7 +226,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     const label = document.getElementById("k9x-red-text-alert-status");
     const current = status();
     if (enabled) enabled.checked = !!state.running;
-    if (label) label.textContent = !state.running ? "Alert: off" : current.alertActive ? `Alert: beeping (${Math.ceil(current.remainingMs / 1000)}s left)` : "Alert: watching";
+    if (label) label.textContent = !state.running ? "Alert: off" : current.alertActive ? `Alert: beeping (${Math.ceil(current.remainingMs / 1000)}s left)` : `Alert: watching (${current.seenMessageCount} seen)`;
   }
 
   function destroy() {
@@ -216,7 +236,7 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     document.getElementById("k9x-red-text-alert-section")?.remove();
   }
 
-  bot.redTextAlert = { start, stop, status, updateConfig, beep, destroy, config };
+  bot.redTextAlert = { start, stop, status, updateConfig, beep, resetSeenMessages, destroy, config };
   state.uiTimerId = window.setInterval(() => { ensureUi(); refreshUiValues(); }, 1000);
   bot.addCleanup(destroy);
   if (config.enabled) start(); else ensureUi();
