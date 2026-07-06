@@ -26,46 +26,39 @@
   ];
 
   function installUiCompatibilityShim() {
-    if (document.__minNewUiCompatibilityShimInstalled) {
-      return;
-    }
-
+    if (document.__minNewUiCompatibilityShimInstalled) return;
     const originalGetElementById = document.getElementById.bind(document);
     document.getElementById = function getElementByIdWithMinNewCompat(id) {
-      if (id === "k9x-panel") {
-        return originalGetElementById("minibia-bot-panel") || originalGetElementById(id);
-      }
+      if (id === "k9x-panel") return originalGetElementById("minibia-bot-panel") || originalGetElementById(id);
       return originalGetElementById(id);
     };
-
     document.__minNewUiCompatibilityShimInstalled = true;
   }
 
-  function installPanelTitleHideStyle() {
-    if (document.getElementById("minibia-bot-hide-title-style")) {
-      return;
+  function blankPanelTitle() {
+    const title = document.querySelector("#minibia-bot-panel .mb-title");
+    if (title) {
+      title.textContent = "";
+      title.setAttribute("title", "");
+      title.style.fontSize = "0";
+      title.style.minHeight = "16px";
+      title.style.flex = "1 1 auto";
     }
+  }
 
-    const style = document.createElement("style");
-    style.id = "minibia-bot-hide-title-style";
-    style.textContent = `
-      #minibia-bot-panel .mb-title {
-        font-size: 0 !important;
-        min-height: 16px;
-        flex: 1 1 auto;
-      }
-      #minibia-bot-panel .mb-title .mb-version {
-        display: none !important;
-      }
-    `;
-    document.head.appendChild(style);
+  function keepPanelTitleBlank() {
+    blankPanelTitle();
+    let attempts = 0;
+    const timerId = window.setInterval(() => {
+      blankPanelTitle();
+      attempts += 1;
+      if (attempts >= 20) window.clearInterval(timerId);
+    }, 250);
   }
 
   async function loadSourceFile(path) {
     const response = await fetch(`${rawBaseUrl}/${path}?t=${Date.now()}`, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`Failed to load ${path}: HTTP ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`Failed to load ${path}: HTTP ${response.status}`);
 
     let code = await response.text();
     if (path === "src/version.js") {
@@ -81,14 +74,13 @@
   async function loadBot() {
     console.log("[minibia-bot] loading source bundle", { repository, ref });
     installUiCompatibilityShim();
-    installPanelTitleHideStyle();
     window.__minibiaBotBundle = {};
 
     for (const file of sourceFiles) {
       await loadSourceFile(file);
     }
 
-    installPanelTitleHideStyle();
+    keepPanelTitleBlank();
   }
 
   loadBot().catch((error) => {
