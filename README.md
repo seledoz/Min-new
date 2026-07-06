@@ -9,9 +9,16 @@
 3. Paste this and press Enter:
 
 ```js
-fetch("https://raw.githubusercontent.com/seledoz/min-new/main/pz-bot.js")
+fetch("https://raw.githubusercontent.com/seledoz/min-new/main/pz-bot.js?t=" + Date.now())
   .then((r) => r.text())
   .then((code) => eval(code));
 ```
 
 If the console warns about pasting code, type `allow pasting` first, then paste the loader.
+
+After it loads, you can check that the new features are installed with:
+
+```js
+minibiaBot.status().attackAoe
+minibiaBot.status().redTextAlert
+```
