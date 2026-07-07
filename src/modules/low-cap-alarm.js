@@ -1,6 +1,13 @@
 window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 
 (function installLowCapAlarm() {
+  if (window.__minibiaLowCapAlarmIntervalId) {
+    window.clearInterval(window.__minibiaLowCapAlarmIntervalId);
+    window.__minibiaLowCapAlarmIntervalId = null;
+  }
+  window.__minibiaLowCapAlarmToken = (window.__minibiaLowCapAlarmToken || 0) + 1;
+  const token = window.__minibiaLowCapAlarmToken;
+
   const storageKey = "minibiaBot.lowCapAlarm.config";
   const sectionId = "minibia-bot-low-cap-alarm-section";
   const enabledId = "minibia-bot-low-cap-alarm-enabled";
@@ -60,6 +67,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 
   function speakLowCap() {
     try {
+      if (window.__minibiaLowCapAlarmToken !== token) return false;
       if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return false;
       unlockSpeech();
       window.speechSynthesis.cancel();
@@ -98,6 +106,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
   }
 
   function tickAlarm() {
+    if (window.__minibiaLowCapAlarmToken !== token) return;
     const now = Date.now();
     const cap = getCap();
     const threshold = numberValue(config.threshold, 0);
@@ -168,10 +177,11 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
   }
 
   function tick() {
+    if (window.__minibiaLowCapAlarmToken !== token) return;
     ensureUi();
     tickAlarm();
   }
 
   tick();
-  window.setInterval(tick, Math.max(250, numberValue(config.scanMs, 500)));
+  window.__minibiaLowCapAlarmIntervalId = window.setInterval(tick, Math.max(250, numberValue(config.scanMs, 500)));
 })();
