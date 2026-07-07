@@ -22,7 +22,6 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
   let lastBeepAt = 0;
   let wasBelow = false;
   let audioContext = null;
-  let lastCapSource = "unknown";
 
   function saveConfig() {
     try { window.localStorage.setItem(storageKey, JSON.stringify(config)); } catch (error) {}
@@ -33,66 +32,18 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     return Number.isFinite(number) && number >= 0 ? number : fallback;
   }
 
-  function parseCapText(text) {
-    const value = String(text || "");
+  function getCap() {
+    const pageText = String(document.body?.innerText || "");
     const patterns = [
-      /\bcap(?:acity)?\s*[:=]?\s*(\d+(?:\.\d+)?)/i,
-      /\b(\d+(?:\.\d+)?)\s*cap\b/i,
+      /(?:^|\b)(?:cap|capacity)\s*[:=]?\s*(\d+(?:\.\d+)?)/i,
+      /(\d+(?:\.\d+)?)\s*(?:cap|capacity)\b/i,
     ];
     for (const pattern of patterns) {
-      const match = value.match(pattern);
+      const match = pageText.match(pattern);
       if (!match) continue;
-      const number = Number(match[1]);
+      const number = Number(String(match[1]).replace(/,/g, ""));
       if (Number.isFinite(number)) return number;
     }
-    return null;
-  }
-
-  function getVisibleTextCap() {
-    const elements = Array.from(document.body?.querySelectorAll?.("*") || []);
-    for (const element of elements) {
-      if (element.closest?.("#minibia-bot-panel, #k9x-panel, script, style")) continue;
-      const rect = element.getBoundingClientRect?.();
-      if (!rect || rect.width <= 0 || rect.height <= 0) continue;
-      const style = window.getComputedStyle(element);
-      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity || 1) <= 0.02) continue;
-      const ownText = Array.from(element.childNodes || [])
-        .filter((node) => node.nodeType === Node.TEXT_NODE)
-        .map((node) => node.textContent || "")
-        .join(" ")
-        .trim();
-      const parsed = parseCapText(ownText || element.textContent || "");
-      if (parsed != null) return parsed;
-    }
-    return null;
-  }
-
-  function getCap() {
-    const textCap = getVisibleTextCap();
-    if (textCap != null) {
-      lastCapSource = "visible text";
-      return textCap;
-    }
-
-    const player = window.gameClient?.player;
-    const candidates = [
-      player?.capacity,
-      player?.cap,
-      player?.freeCapacity,
-      player?.freeCap,
-      player?.stats?.capacity,
-      player?.stats?.cap,
-      player?.__capacity,
-      player?.__cap,
-    ];
-    for (const value of candidates) {
-      const number = Number(value);
-      if (Number.isFinite(number)) {
-        lastCapSource = "client value";
-        return number;
-      }
-    }
-    lastCapSource = "unknown";
     return null;
   }
 
@@ -142,12 +93,12 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     if (!config.enabled) {
       status.textContent = "Status: off";
     } else if (cap == null) {
-      status.textContent = `Status: watching, cap unknown, threshold ${threshold}`;
+      status.textContent = `Status: watching, cap number not found, threshold ${threshold}`;
     } else if (alarmStartedAt) {
       const remaining = Math.max(0, Math.ceil((config.alertDurationMs - (Date.now() - alarmStartedAt)) / 1000));
       status.textContent = `Status: LOW CAP ${cap} / ${threshold} (${remaining}s)`;
     } else {
-      status.textContent = `Status: cap ${cap} / threshold ${threshold} (${lastCapSource})`;
+      status.textContent = `Status: cap ${cap} / threshold ${threshold}`;
     }
   }
 
