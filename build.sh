@@ -27,6 +27,7 @@ cat \
   src/modules/auto-attack.js \
   src/modules/auto-attack-exclude.js \
   src/modules/auto-attack-aoe.js \
+  src/modules/auto-attack-gfb.js \
   src/modules/auto-attack-aoe-layout.js \
   src/modules/red-text-alert.js \
   src/modules/cave.js \
