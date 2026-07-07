@@ -64,13 +64,29 @@
     debugLabel?.closest?.(".mb-section")?.remove();
   }
 
+  function removePanicRunnerSection() {
+    const setHomeButton = document.getElementById("minibia-bot-set-home");
+    const panicSection = setHomeButton?.closest?.(".mb-section");
+    if (panicSection) {
+      panicSection.remove();
+      return;
+    }
+
+    document.getElementById("minibia-bot-home")?.closest?.(".mb-section")?.remove();
+    document.getElementById("minibia-bot-panic-unknown")?.closest?.(".mb-section")?.remove();
+    document.getElementById("minibia-bot-panic-health")?.closest?.(".mb-section")?.remove();
+    document.getElementById("minibia-bot-panic-return")?.closest?.(".mb-section")?.remove();
+  }
+
   function keepPanelTitleBlank() {
     blankPanelTitle();
     removePanelDebugSection();
+    removePanicRunnerSection();
     let attempts = 0;
     const timerId = window.setInterval(() => {
       blankPanelTitle();
       removePanelDebugSection();
+      removePanicRunnerSection();
       document.getElementById("minibia-bot-waypoint-profiles-section")?.remove();
       attempts += 1;
       if (attempts >= 20) window.clearInterval(timerId);
