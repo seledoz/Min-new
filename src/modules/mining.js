@@ -28,7 +28,7 @@ window.__minibiaBotBundle.installMiningModule = function installMiningModule(bot
     cooldownMs: 1500,
     rockNameFilter: "rock",
     tickMs: 250,
-    crosshairDelayMs: 125,
+    crosshairDelayMs: 175,
   }, bot.storage.get(configStorageKey, {}) || {});
 
   config.enabled = !!config.enabled;
@@ -36,7 +36,7 @@ window.__minibiaBotBundle.installMiningModule = function installMiningModule(bot
   config.cooldownMs = nonNegativeInt(config.cooldownMs, 1500);
   config.rockNameFilter = String(config.rockNameFilter || "rock").trim() || "rock";
   config.tickMs = positiveInt(config.tickMs, 250);
-  config.crosshairDelayMs = nonNegativeInt(config.crosshairDelayMs, 125);
+  config.crosshairDelayMs = nonNegativeInt(config.crosshairDelayMs, 175);
 
   function persistConfig() { bot.storage.set(configStorageKey, { ...config }); }
   function normalizeHotbarSlot(slot) { const n = Math.trunc(Number(slot)); return Number.isFinite(n) && n >= 1 && n <= 12 ? n : null; }
@@ -138,31 +138,77 @@ window.__minibiaBotBundle.installMiningModule = function installMiningModule(bot
     return entries[Math.floor(Math.random() * entries.length)] || null;
   }
 
+  function getBestGameCanvas() {
+    const canvases = Array.from(document.querySelectorAll("canvas"));
+    let best = null;
+    let bestArea = 0;
+    for (const canvas of canvases) {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width < 200 || rect.height < 150) continue;
+      if (canvas.closest?.("#minibia-bot-panel")) continue;
+      const area = rect.width * rect.height;
+      if (area > bestArea) {
+        best = canvas;
+        bestArea = area;
+      }
+    }
+    return best;
+  }
+
+  function dispatchMouseClick(element, clientX, clientY) {
+    const options = {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      button: 0,
+      buttons: 1,
+      clientX,
+      clientY,
+      screenX: window.screenX + clientX,
+      screenY: window.screenY + clientY,
+    };
+    element.dispatchEvent(new MouseEvent("mousemove", options));
+    element.dispatchEvent(new MouseEvent("mousedown", options));
+    element.dispatchEvent(new MouseEvent("mouseup", { ...options, buttons: 0 }));
+    element.dispatchEvent(new MouseEvent("click", { ...options, buttons: 0 }));
+  }
+
+  function clickCanvasAtTile(entry) {
+    const canvas = getBestGameCanvas();
+    const playerPosition = normalizePosition(bot.getPlayerPosition?.());
+    if (!canvas || !playerPosition || !entry?.position) return false;
+
+    const rect = canvas.getBoundingClientRect();
+    const dx = entry.position.x - playerPosition.x;
+    const dy = entry.position.y - playerPosition.y;
+
+    // Minibia/Tibia view is normally 15 x 11 tiles, with the player centered.
+    const tileWidth = rect.width / 15;
+    const tileHeight = rect.height / 11;
+    const clientX = rect.left + rect.width / 2 + dx * tileWidth;
+    const clientY = rect.top + rect.height / 2 + dy * tileHeight;
+
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return false;
+    dispatchMouseClick(canvas, clientX, clientY);
+    return true;
+  }
+
   function clickCrosshairOnTile(entry) {
+    // Use a real canvas click. Internal handlers were returning success without visibly clicking the tile.
+    if (clickCanvasAtTile(entry)) return true;
+
     const mouse = window.gameClient?.mouse;
     const target = { which: entry.tile, index: 0xFF };
 
-    if (typeof mouse?.__handleItemUseWith === "function") {
-      try {
-        mouse.__handleItemUseWith(null, target);
-        return true;
-      } catch (error) {}
-    }
-
-    if (typeof mouse?.__handleThingUse === "function") {
-      try {
-        mouse.__handleThingUse(target);
-        return true;
-      } catch (error) {}
-    }
-
     if (typeof mouse?.__handleTileClick === "function") {
-      try {
-        mouse.__handleTileClick(entry.tile);
-        return true;
-      } catch (error) {}
+      try { mouse.__handleTileClick(entry.tile); return true; } catch (error) {}
     }
-
+    if (typeof mouse?.__handleThingUse === "function") {
+      try { mouse.__handleThingUse(target); return true; } catch (error) {}
+    }
+    if (typeof mouse?.__handleItemUseWith === "function") {
+      try { mouse.__handleItemUseWith(null, target); return true; } catch (error) {}
+    }
     return false;
   }
 
