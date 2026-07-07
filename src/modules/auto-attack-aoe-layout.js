@@ -74,40 +74,6 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
   moveAoeSection();
 })();
 
-(function makeGfbStartAoeScanner() {
-  function enableAoeScannerForGfb() {
-    try {
-      const bot = window.minibiaBot;
-      const gfbToggle = document.getElementById("minibia-bot-gfb-enabled");
-      if (!bot?.attackAoe || !gfbToggle?.checked) return;
-
-      bot.attackAoe.updateConfig?.({ enabled: true, gfbEnabled: true });
-      bot.attackAoe.start?.({ enabled: true, gfbEnabled: true });
-
-      const aoeToggle = document.getElementById("minibia-bot-auto-attack-aoe-enabled");
-      if (aoeToggle) aoeToggle.checked = true;
-    } catch (error) {}
-  }
-
-  function attachGfbStartHandler() {
-    const gfbToggle = document.getElementById("minibia-bot-gfb-enabled");
-    if (!gfbToggle || gfbToggle.dataset.gfbStartHandlerInstalled === "true") return false;
-    gfbToggle.dataset.gfbStartHandlerInstalled = "true";
-    gfbToggle.addEventListener("change", enableAoeScannerForGfb);
-    enableAoeScannerForGfb();
-    return true;
-  }
-
-  let attempts = 0;
-  const retryId = window.setInterval(() => {
-    attempts += 1;
-    const attached = attachGfbStartHandler();
-    if (attached || attempts >= 30) window.clearInterval(retryId);
-  }, 1000);
-
-  attachGfbStartHandler();
-})();
-
 (function forceNormalAutoAttackRangeSix() {
   const storageKey = "minibiaBot.attack.config";
 
