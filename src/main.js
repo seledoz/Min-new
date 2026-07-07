@@ -12,6 +12,7 @@
     ["cave", "minibiaBot.cave.config"],
     ["caveForwardLoop", "minibiaBot.caveForwardLoop.config"],
     ["equipRing", "minibiaBot.equipRing.config"],
+    ["mining", "minibiaBot.mining.config"],
     ["eat", "minibiaBot.eat.config"],
     ["talk", "minibiaBot.talk.config"],
   ];
@@ -75,6 +76,7 @@
     currentBundle.installCaveForwardLoopModule?.(bot);
     currentBundle.installCaveArrowKeysModule?.(bot);
     currentBundle.installEquipRingModule(bot);
+    currentBundle.installMiningModule?.(bot);
     currentBundle.installAutoEatModule(bot);
     currentBundle.installTalkModule(bot);
     currentBundle.installPanel(bot);
@@ -107,6 +109,7 @@
       caveForwardLoop: bot.caveForwardLoop?.status?.() || null,
       caveArrowKeys: bot.caveArrowKeys?.status?.() || null,
       equipRing: bot.equipRing.status(),
+      mining: bot.mining?.status?.() || null,
       eat: bot.eat.status(),
       talk: bot.talk.status(),
     });
@@ -118,7 +121,7 @@
       branch: bot.version.branch,
       commit: bot.version.commit,
       buildDate: bot.version.date,
-      modules: ["pz", "xray", "panic", "rune", "heal", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "equipRing", "eat", "talk", "ui"],
+      modules: ["pz", "xray", "panic", "rune", "heal", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "equipRing", "mining", "eat", "talk", "ui"],
     });
     console.log("minibiaBot.reload()");
     console.log("minibiaBot.attackExclude.addName(\"monster name\")");
@@ -129,6 +132,8 @@
     console.log("minibiaBot.redTextAlert.stop()");
     console.log("minibiaBot.cave.start()");
     console.log("minibiaBot.cave.stop()");
+    console.log("minibiaBot.mining.start({ pickHotbarSlot: 5 })");
+    console.log("minibiaBot.mining.stop()");
     return bot;
   }
 
