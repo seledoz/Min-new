@@ -15,29 +15,31 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     lastBeepAt: 0,
     lastSeenText: "",
     lastSeenAt: 0,
-    lastNoRedAt: 0,
+    lastNoCaptchaAt: 0,
     audioContext: null,
-    baselineRedTextKeys: new Set(),
+    baselineCaptchaKeys: new Set(),
   };
 
   const config = Object.assign(
     {
       enabled: false,
-      beepIntervalMs: 3000,
-      alertDurationMs: 30000,
-      clearEventAfterNoRedMs: 1500,
-      scanMs: 300,
-      consoleSelector: "",
+      beepIntervalMs: 1000,
+      alertDurationMs: 60000,
+      clearEventAfterNoCaptchaMs: 1500,
+      scanMs: 250,
+      minChoiceCount: 5,
+      maxChoiceCount: 9,
       scanExistingOnStart: false,
     },
     bot.storage.get(configStorageKey, {}) || {}
   );
 
-  config.beepIntervalMs = positiveInt(config.beepIntervalMs, 3000);
-  config.alertDurationMs = positiveInt(config.alertDurationMs, 30000);
-  config.clearEventAfterNoRedMs = positiveInt(config.clearEventAfterNoRedMs, 1500);
-  config.scanMs = Math.max(100, positiveInt(config.scanMs, 300));
-  config.consoleSelector = String(config.consoleSelector || "").trim();
+  config.beepIntervalMs = positiveInt(config.beepIntervalMs, 1000);
+  config.alertDurationMs = positiveInt(config.alertDurationMs, 60000);
+  config.clearEventAfterNoCaptchaMs = positiveInt(config.clearEventAfterNoCaptchaMs, 1500);
+  config.scanMs = Math.max(100, positiveInt(config.scanMs, 250));
+  config.minChoiceCount = Math.max(3, positiveInt(config.minChoiceCount, 5));
+  config.maxChoiceCount = Math.max(config.minChoiceCount, positiveInt(config.maxChoiceCount, 9));
   config.scanExistingOnStart = false;
 
   function persistConfig() { bot.storage.set(configStorageKey, { ...config }); }
@@ -54,29 +56,20 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
   function beep() {
     const audioContext = getAudioContext();
     if (!audioContext) return false;
+    const now = audioContext.currentTime;
     const oscillator = audioContext.createOscillator();
     const gain = audioContext.createGain();
-    const now = audioContext.currentTime;
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(880, now);
+    oscillator.type = "square";
+    oscillator.frequency.setValueAtTime(980, now);
+    oscillator.frequency.setValueAtTime(740, now + 0.18);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+    gain.gain.exponentialRampToValueAtTime(0.25, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
     oscillator.connect(gain);
     gain.connect(audioContext.destination);
     oscillator.start(now);
-    oscillator.stop(now + 0.28);
+    oscillator.stop(now + 0.38);
     return true;
-  }
-
-  function isRedColor(value) {
-    const color = String(value || "").trim().toLowerCase();
-    if (!color || color === "transparent" || color === "inherit") return false;
-    if (color.includes("red") || color.includes("#f00") || color.includes("#ff0000")) return true;
-    const match = color.match(/rgba?\(([^)]+)\)/);
-    if (!match) return false;
-    const [r, g, b, a = 1] = match[1].split(",").map((part) => Number.parseFloat(part.trim()));
-    return [r, g, b, a].every(Number.isFinite) && a > 0.05 && r >= 150 && r > g * 1.4 && r > b * 1.4;
   }
 
   function isIgnoredElement(element) {
@@ -86,99 +79,116 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
   function isVisibleElement(element) {
     if (!(element instanceof Element) || isIgnoredElement(element)) return false;
     const rect = element.getBoundingClientRect?.();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
     const style = window.getComputedStyle(element);
-    return !!rect && rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || 1) > 0;
+    return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || 1) > 0.02;
   }
 
-  function elementHasOwnRedText(element) {
+  function hasImageLikeContent(element) {
+    if (!(element instanceof Element)) return false;
+    const tagName = element.tagName?.toLowerCase?.() || "";
+    if (["canvas", "img", "svg", "picture"].includes(tagName)) return true;
+    const style = window.getComputedStyle(element);
+    return !!style.backgroundImage && style.backgroundImage !== "none";
+  }
+
+  function getZIndexValue(element) {
+    const value = Number.parseInt(window.getComputedStyle(element).zIndex, 10);
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function isPopupCandidate(element) {
     if (!isVisibleElement(element)) return false;
-    const text = String(element.textContent || "").trim();
-    if (!text || text.length > 500) return false;
-    const childText = Array.from(element.children || []).map((child) => String(child.textContent || "").trim()).join("").trim();
-    if (childText && childText.length >= text.length * 0.8) return false;
+    const rect = element.getBoundingClientRect();
+    const viewportWidth = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+    const viewportHeight = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
     const style = window.getComputedStyle(element);
-    return isRedColor(style.color) || isRedColor(style.backgroundColor);
+    const position = style.position;
+    const zIndex = getZIndexValue(element);
+    if (rect.width < 180 || rect.width > Math.min(760, viewportWidth * 0.95)) return false;
+    if (rect.height < 160 || rect.height > Math.min(720, viewportHeight * 0.95)) return false;
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const nearCenter = Math.abs(centerX - viewportWidth / 2) <= viewportWidth * 0.38 && Math.abs(centerY - viewportHeight / 2) <= viewportHeight * 0.38;
+    const overlayLike = ["fixed", "absolute", "sticky"].includes(position) || zIndex >= 10;
+    const visibleBorderOrBg = style.backgroundColor !== "rgba(0, 0, 0, 0)" || style.borderStyle !== "none";
+    return nearCenter && overlayLike && visibleBorderOrBg;
   }
 
-  function getNodeText(node) { return String(node?.textContent || "").trim().replace(/\s+/g, " "); }
-  function getRedKey(element) { return getNodeText(element).toLowerCase(); }
-
-  function getConsoleRoots() {
-    if (config.consoleSelector) {
-      try {
-        const customRoots = Array.from(document.querySelectorAll(config.consoleSelector)).filter(isVisibleElement);
-        if (customRoots.length) return customRoots;
-      } catch (error) {
-        bot.log("red text alert console selector failed", { selector: config.consoleSelector, error: error?.message || String(error) });
-      }
-    }
-
-    const selectors = [
-      '[id*="console" i]', '[class*="console" i]',
-      '[id*="chat" i]', '[class*="chat" i]'
-    ];
-
-    const roots = Array.from(document.querySelectorAll(selectors.join(",")))
-      .filter(isVisibleElement)
-      .filter((element) => String(element.textContent || "").trim().length > 0)
-      .filter((element) => !element.closest?.("#minibia-bot-panel, #k9x-panel"));
-
-    const leafiest = roots.filter((element) => !roots.some((other) => other !== element && element.contains(other)));
-    return Array.from(new Set(leafiest.length ? leafiest : roots));
-  }
-
-  function getVisibleRedElements() {
-    const found = [];
+  function getChoiceElements(root) {
+    const choices = [];
     const seen = new Set();
-    for (const root of getConsoleRoots()) {
-      const candidates = Array.from(root.querySelectorAll?.("*") || []).filter(elementHasOwnRedText);
-      for (const candidate of candidates) {
-        if (!seen.has(candidate)) {
-          seen.add(candidate);
-          found.push(candidate);
-        }
+    const elements = Array.from(root.querySelectorAll?.("*") || []);
+    for (const element of elements) {
+      if (!isVisibleElement(element) || seen.has(element)) continue;
+      if (!hasImageLikeContent(element)) continue;
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 24 || rect.height < 24 || rect.width > 140 || rect.height > 140) continue;
+      const ratio = rect.width / rect.height;
+      if (ratio < 0.55 || ratio > 1.85) continue;
+      const parent = element.closest?.("button, [role='button'], a, label") || element.parentElement || element;
+      const choice = parent instanceof Element && isVisibleElement(parent) ? parent : element;
+      const choiceRect = choice.getBoundingClientRect();
+      if (choiceRect.width < 28 || choiceRect.height < 28 || choiceRect.width > 170 || choiceRect.height > 170) continue;
+      if (!seen.has(choice)) {
+        seen.add(choice);
+        choices.push(choice);
       }
     }
-    return found;
+    return choices;
   }
 
-  function refreshBaselineRedText() {
-    const visibleKeys = new Set(getVisibleRedElements().map(getRedKey).filter(Boolean));
-    for (const key of Array.from(state.baselineRedTextKeys)) {
-      if (!visibleKeys.has(key)) state.baselineRedTextKeys.delete(key);
+  function hasGridLikeLayout(elements) {
+    if (!elements.length) return false;
+    const centers = elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), width: rect.width, height: rect.height };
+    });
+    const rows = [];
+    for (const center of centers) {
+      let row = rows.find((candidate) => Math.abs(candidate.y - center.y) <= Math.max(12, center.height * 0.45));
+      if (!row) {
+        row = { y: center.y, items: [] };
+        rows.push(row);
+      }
+      row.items.push(center);
+      row.y = row.items.reduce((sum, item) => sum + item.y, 0) / row.items.length;
     }
+    const rowCounts = rows.map((row) => row.items.length).sort((a, b) => b - a);
+    return rowCounts.filter((count) => count >= 2).length >= 2 && (rowCounts[0] || 0) >= 2;
+  }
+
+  function getCaptchaKey(element, choices) {
+    const rect = element.getBoundingClientRect();
+    return [Math.round(rect.left), Math.round(rect.top), Math.round(rect.width), Math.round(rect.height), choices.length].join(":");
+  }
+
+  function getCaptchaCandidates() {
+    const candidates = [];
+    const roots = Array.from(document.body?.querySelectorAll?.("*") || []).filter(isPopupCandidate).sort((a, b) => getZIndexValue(b) - getZIndexValue(a));
+    for (const root of roots) {
+      const choices = getChoiceElements(root);
+      if (choices.length < config.minChoiceCount || choices.length > config.maxChoiceCount) continue;
+      if (!hasGridLikeLayout(choices)) continue;
+      candidates.push({ element: root, choices, key: getCaptchaKey(root, choices) });
+    }
+    return candidates;
+  }
+
+  function refreshBaselineCaptchas() {
+    const visibleKeys = new Set(getCaptchaCandidates().map((candidate) => candidate.key).filter(Boolean));
+    for (const key of Array.from(state.baselineCaptchaKeys)) if (!visibleKeys.has(key)) state.baselineCaptchaKeys.delete(key);
     return visibleKeys;
   }
 
-  function findFirstNewRedElement() {
-    refreshBaselineRedText();
-    return getVisibleRedElements().find((element) => {
-      const key = getRedKey(element);
-      return key && !state.baselineRedTextKeys.has(key);
-    }) || null;
+  function findFirstNewCaptcha() {
+    refreshBaselineCaptchas();
+    return getCaptchaCandidates().find((candidate) => candidate.key && !state.baselineCaptchaKeys.has(candidate.key)) || null;
   }
 
-  function hasVisibleRedText() { return getVisibleRedElements().length > 0; }
+  function hasCaptchaNow() { return getCaptchaCandidates().length > 0; }
 
-  function nodeIsInsideConsole(node) {
-    const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    if (!isVisibleElement(element)) return false;
-    return getConsoleRoots().some((root) => root === element || root.contains(element));
-  }
-
-  function nodeHasRedText(node) {
-    if (!node || !nodeIsInsideConsole(node)) return false;
-    const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    return elementHasOwnRedText(element);
-  }
-
-  function getRedTextFromNode(node) {
-    if (!node) return "";
-    if (node.nodeType === Node.TEXT_NODE) return getNodeText(node.parentElement || node);
-    return getNodeText(node);
-  }
-
-  function startAlert(text = "") {
+  function startAlert(text = "Captcha popup detected") {
     if (!config.enabled || !state.running || state.mode !== "watching") return false;
     const now = Date.now();
     state.mode = "beeping";
@@ -186,18 +196,18 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     state.lastBeepAt = 0;
     state.lastSeenText = text;
     state.lastSeenAt = now;
-    state.baselineRedTextKeys.clear();
-    bot.log("red text alert triggered", { text, beepIntervalMs: config.beepIntervalMs, alertDurationMs: config.alertDurationMs, consoleRoots: getConsoleRoots().length });
+    state.baselineCaptchaKeys.clear();
+    bot.log("captcha alarm triggered", { text, beepIntervalMs: config.beepIntervalMs, alertDurationMs: config.alertDurationMs });
     tickAlert();
     refreshUiValues();
     return true;
   }
 
-  function scanForRedText() {
+  function scanForCaptcha() {
     if (!config.enabled || !state.running) return;
     if (state.mode === "watching") {
-      const redElement = findFirstNewRedElement();
-      if (redElement) startAlert(getNodeText(redElement));
+      const captcha = findFirstNewCaptcha();
+      if (captcha) startAlert(`Captcha popup detected (${captcha.choices.length} choices)`);
       return;
     }
     if (state.mode === "waiting-clear") checkForClear();
@@ -212,48 +222,48 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     stopAlertTimer();
     if (!config.enabled || !state.running || state.mode !== "beeping" || !state.alertStartedAt) return;
     const now = Date.now();
-    const durationMs = positiveInt(config.alertDurationMs, 30000);
-    const intervalMs = positiveInt(config.beepIntervalMs, 3000);
+    const durationMs = positiveInt(config.alertDurationMs, 60000);
+    const intervalMs = positiveInt(config.beepIntervalMs, 1000);
     const elapsedMs = now - state.alertStartedAt;
     if (elapsedMs >= durationMs) {
       state.alertStartedAt = 0;
       state.lastBeepAt = 0;
       state.mode = "waiting-clear";
-      state.lastNoRedAt = 0;
-      state.baselineRedTextKeys = new Set(getVisibleRedElements().map(getRedKey).filter(Boolean));
+      state.lastNoCaptchaAt = 0;
+      state.baselineCaptchaKeys = new Set(getCaptchaCandidates().map((candidate) => candidate.key).filter(Boolean));
       refreshUiValues();
       return;
     }
     if (!state.lastBeepAt || now - state.lastBeepAt >= intervalMs) {
       if (beep()) state.lastBeepAt = now;
     }
-    state.alertTimerId = window.setTimeout(tickAlert, 250);
+    state.alertTimerId = window.setTimeout(tickAlert, 200);
     refreshUiValues();
   }
 
   function checkForClear() {
     if (!state.running || state.mode !== "waiting-clear") return;
     const now = Date.now();
-    if (hasVisibleRedText()) {
-      state.lastNoRedAt = 0;
-      refreshBaselineRedText();
+    if (hasCaptchaNow()) {
+      state.lastNoCaptchaAt = 0;
+      refreshBaselineCaptchas();
       return;
     }
-    if (!state.lastNoRedAt) {
-      state.lastNoRedAt = now;
+    if (!state.lastNoCaptchaAt) {
+      state.lastNoCaptchaAt = now;
       return;
     }
-    if (now - state.lastNoRedAt >= positiveInt(config.clearEventAfterNoRedMs, 1500)) {
+    if (now - state.lastNoCaptchaAt >= positiveInt(config.clearEventAfterNoCaptchaMs, 1500)) {
       state.mode = "watching";
-      state.lastNoRedAt = 0;
-      state.baselineRedTextKeys.clear();
+      state.lastNoCaptchaAt = 0;
+      state.baselineCaptchaKeys.clear();
       refreshUiValues();
     }
   }
 
   function startScanTimer() {
     stopScanTimer();
-    state.scanTimerId = window.setInterval(scanForRedText, Math.max(100, positiveInt(config.scanMs, 300)));
+    state.scanTimerId = window.setInterval(scanForCaptcha, Math.max(100, positiveInt(config.scanMs, 250)));
   }
 
   function stopScanTimer() {
@@ -263,11 +273,19 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
 
   function inspectAddedNode(node) {
     if (!config.enabled || !state.running || state.mode !== "watching") return false;
-    if (!nodeHasRedText(node)) return false;
-    const text = getRedTextFromNode(node);
-    const key = String(text || "").toLowerCase();
-    if (key && state.baselineRedTextKeys.has(key)) return false;
-    return startAlert(text);
+    const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    if (!(element instanceof Element)) return false;
+    const roots = [element, ...Array.from(element.querySelectorAll?.("*") || [])];
+    for (const root of roots) {
+      if (!isPopupCandidate(root)) continue;
+      const choices = getChoiceElements(root);
+      if (choices.length < config.minChoiceCount || choices.length > config.maxChoiceCount) continue;
+      if (!hasGridLikeLayout(choices)) continue;
+      const key = getCaptchaKey(root, choices);
+      if (key && state.baselineCaptchaKeys.has(key)) return false;
+      return startAlert(`Captcha popup detected (${choices.length} choices)`);
+    }
+    return false;
   }
 
   function startObserver() {
@@ -276,13 +294,10 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
       if (state.mode !== "watching") return;
       for (const mutation of mutations) {
         if (mutation.type === "attributes" && inspectAddedNode(mutation.target)) return;
-        if (mutation.type === "characterData" && inspectAddedNode(mutation.target)) return;
-        for (const node of mutation.addedNodes) {
-          if (inspectAddedNode(node)) return;
-        }
+        for (const node of mutation.addedNodes) if (inspectAddedNode(node)) return;
       }
     });
-    state.observer.observe(document.body || document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style", "class"] });
+    state.observer.observe(document.body || document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class", "hidden", "aria-hidden"] });
   }
 
   function stopObserver() {
@@ -297,11 +312,11 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     state.mode = "watching";
     state.alertStartedAt = 0;
     state.lastBeepAt = 0;
-    state.lastNoRedAt = 0;
-    state.baselineRedTextKeys = new Set(getVisibleRedElements().map(getRedKey).filter(Boolean));
+    state.lastNoCaptchaAt = 0;
+    state.baselineCaptchaKeys = new Set(getCaptchaCandidates().map((candidate) => candidate.key).filter(Boolean));
     startObserver();
     startScanTimer();
-    bot.log("red text alert started", { ...config, mode: state.mode, consoleRoots: getConsoleRoots().length, baselineRedTextCount: state.baselineRedTextKeys.size });
+    bot.log("captcha alarm started", { ...config, mode: state.mode, baselineCaptchaCount: state.baselineCaptchaKeys.size });
     refreshUiValues();
     return true;
   }
@@ -311,8 +326,8 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     state.mode = "watching";
     state.alertStartedAt = 0;
     state.lastBeepAt = 0;
-    state.lastNoRedAt = 0;
-    state.baselineRedTextKeys.clear();
+    state.lastNoCaptchaAt = 0;
+    state.baselineCaptchaKeys.clear();
     stopObserver();
     stopAlertTimer();
     stopScanTimer();
@@ -320,20 +335,24 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
       config.enabled = false;
       persistConfig();
     }
-    bot.log("red text alert stopped");
+    bot.log("captcha alarm stopped");
     refreshUiValues();
     return true;
   }
 
   function updateConfig(nextConfig = {}, options = {}) {
-    if (Object.prototype.hasOwnProperty.call(nextConfig, "beepIntervalMs")) nextConfig.beepIntervalMs = positiveInt(nextConfig.beepIntervalMs, config.beepIntervalMs || 3000);
-    if (Object.prototype.hasOwnProperty.call(nextConfig, "alertDurationMs")) nextConfig.alertDurationMs = positiveInt(nextConfig.alertDurationMs, config.alertDurationMs || 30000);
-    if (Object.prototype.hasOwnProperty.call(nextConfig, "clearEventAfterNoRedMs")) nextConfig.clearEventAfterNoRedMs = positiveInt(nextConfig.clearEventAfterNoRedMs, config.clearEventAfterNoRedMs || 1500);
-    if (Object.prototype.hasOwnProperty.call(nextConfig, "scanMs")) nextConfig.scanMs = Math.max(100, positiveInt(nextConfig.scanMs, config.scanMs || 300));
-    if (Object.prototype.hasOwnProperty.call(nextConfig, "consoleSelector")) nextConfig.consoleSelector = String(nextConfig.consoleSelector || "").trim();
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "beepIntervalMs")) nextConfig.beepIntervalMs = positiveInt(nextConfig.beepIntervalMs, config.beepIntervalMs || 1000);
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "alertDurationMs")) nextConfig.alertDurationMs = positiveInt(nextConfig.alertDurationMs, config.alertDurationMs || 60000);
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "clearEventAfterNoCaptchaMs")) nextConfig.clearEventAfterNoCaptchaMs = positiveInt(nextConfig.clearEventAfterNoCaptchaMs, config.clearEventAfterNoCaptchaMs || 1500);
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "clearEventAfterNoRedMs")) nextConfig.clearEventAfterNoCaptchaMs = positiveInt(nextConfig.clearEventAfterNoRedMs, config.clearEventAfterNoCaptchaMs || 1500);
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "scanMs")) nextConfig.scanMs = Math.max(100, positiveInt(nextConfig.scanMs, config.scanMs || 250));
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "minChoiceCount")) nextConfig.minChoiceCount = Math.max(3, positiveInt(nextConfig.minChoiceCount, config.minChoiceCount || 5));
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "maxChoiceCount")) nextConfig.maxChoiceCount = Math.max(config.minChoiceCount, positiveInt(nextConfig.maxChoiceCount, config.maxChoiceCount || 9));
     if (Object.prototype.hasOwnProperty.call(nextConfig, "scanExistingOnStart")) nextConfig.scanExistingOnStart = false;
     Object.assign(config, nextConfig);
     config.scanExistingOnStart = false;
+    config.minChoiceCount = Math.max(3, positiveInt(config.minChoiceCount, 5));
+    config.maxChoiceCount = Math.max(config.minChoiceCount, positiveInt(config.maxChoiceCount, 9));
     persistConfig();
     if (state.running && Object.prototype.hasOwnProperty.call(nextConfig, "scanMs")) startScanTimer();
     if (!options.silent) refreshUiValues();
@@ -344,17 +363,17 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     state.mode = "watching";
     state.alertStartedAt = 0;
     state.lastBeepAt = 0;
-    state.lastNoRedAt = 0;
-    state.baselineRedTextKeys.clear();
+    state.lastNoCaptchaAt = 0;
+    state.baselineCaptchaKeys.clear();
     stopAlertTimer();
-    bot.log("red text alert state reset");
+    bot.log("captcha alarm state reset");
     refreshUiValues();
   }
 
   function status() {
     const now = Date.now();
-    const remainingMs = state.mode === "beeping" && state.alertStartedAt ? Math.max(0, positiveInt(config.alertDurationMs, 30000) - (now - state.alertStartedAt)) : 0;
-    const visibleRedCount = getVisibleRedElements().length;
+    const remainingMs = state.mode === "beeping" && state.alertStartedAt ? Math.max(0, positiveInt(config.alertDurationMs, 60000) - (now - state.alertStartedAt)) : 0;
+    const candidates = getCaptchaCandidates();
     return {
       running: state.running,
       config: { ...config },
@@ -364,10 +383,13 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
       lastSeenText: state.lastSeenText,
       lastSeenAt: state.lastSeenAt,
       lastBeepAt: state.lastBeepAt,
-      visibleRedTextNow: visibleRedCount > 0,
-      visibleRedCount,
-      baselineRedTextCount: state.baselineRedTextKeys.size,
-      consoleRootCount: getConsoleRoots().length,
+      captchaVisibleNow: candidates.length > 0,
+      captchaCandidateCount: candidates.length,
+      visibleRedTextNow: false,
+      visibleRedCount: 0,
+      baselineCaptchaCount: state.baselineCaptchaKeys.size,
+      baselineRedTextCount: state.baselineCaptchaKeys.size,
+      consoleRootCount: candidates.length,
     };
   }
 
@@ -379,11 +401,11 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
     section.className = "mb-section mb-column-section";
     section.id = "k9x-red-text-alert-section";
     section.innerHTML = `
-      <div class="mb-label">Red Text Alert</div>
+      <div class="mb-label">Captcha Alarm</div>
       <div class="mb-stack">
-        <label class="mb-toggle"><input type="checkbox" id="k9x-red-text-alert-enabled" /><span>Enable Red Text Alert</span></label>
+        <label class="mb-toggle"><input type="checkbox" id="k9x-red-text-alert-enabled" /><span>Enable Captcha Alarm</span></label>
         <div class="mb-small-note" id="k9x-red-text-alert-status">Alert: off</div>
-        <div class="mb-small-note">Beeps every 3 seconds for 30 seconds. Watches only console/chat line text.</div>
+        <div class="mb-small-note">Alarms when a verification popup with a creature-choice grid appears. It does not click or solve it.</div>
       </div>`;
     parent.appendChild(section);
     const enabled = section.querySelector("#k9x-red-text-alert-enabled");
@@ -400,8 +422,8 @@ window.__minibiaBotBundle.installRedTextAlertModule = function installRedTextAle
       label.textContent = !state.running
         ? "Alert: off"
         : current.alertActive
-          ? `Alert: beeping (${Math.ceil(current.remainingMs / 1000)}s left)`
-          : `Alert: watching (${current.consoleRootCount} console areas)`;
+          ? `Alert: CAPTCHA (${Math.ceil(current.remainingMs / 1000)}s left)`
+          : `Alert: watching for popup (${current.captchaCandidateCount} visible)`;
     }
   }
 
