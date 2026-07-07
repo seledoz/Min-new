@@ -15,6 +15,7 @@ window.__minibiaBotBundle.installMiningModule = function installMiningModule(bot
     timerId: null,
     uiTimerId: null,
     running: false,
+    using: false,
     lastMineAt: 0,
     lastRockPosition: null,
     lastRockName: "",
@@ -27,6 +28,7 @@ window.__minibiaBotBundle.installMiningModule = function installMiningModule(bot
     cooldownMs: 1500,
     rockNameFilter: "rock",
     tickMs: 250,
+    crosshairDelayMs: 125,
   }, bot.storage.get(configStorageKey, {}) || {});
 
   config.enabled = !!config.enabled;
@@ -34,6 +36,7 @@ window.__minibiaBotBundle.installMiningModule = function installMiningModule(bot
   config.cooldownMs = nonNegativeInt(config.cooldownMs, 1500);
   config.rockNameFilter = String(config.rockNameFilter || "rock").trim() || "rock";
   config.tickMs = positiveInt(config.tickMs, 250);
+  config.crosshairDelayMs = nonNegativeInt(config.crosshairDelayMs, 125);
 
   function persistConfig() { bot.storage.set(configStorageKey, { ...config }); }
   function normalizeHotbarSlot(slot) { const n = Math.trunc(Number(slot)); return Number.isFinite(n) && n >= 1 && n <= 12 ? n : null; }
@@ -48,10 +51,6 @@ window.__minibiaBotBundle.installMiningModule = function installMiningModule(bot
     return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)
       ? { x: Math.trunc(x), y: Math.trunc(y), z: Math.trunc(z) }
       : null;
-  }
-
-  function samePosition(a, b) {
-    return !!a && !!b && a.x === b.x && a.y === b.y && a.z === b.z;
   }
 
   function positionKey(position) {
@@ -139,72 +138,72 @@ window.__minibiaBotBundle.installMiningModule = function installMiningModule(bot
     return entries[Math.floor(Math.random() * entries.length)] || null;
   }
 
-  function isPickItem(item) {
-    return /\bpick\b/i.test(getThingName(item));
-  }
+  function clickCrosshairOnTile(entry) {
+    const mouse = window.gameClient?.mouse;
+    const target = { which: entry.tile, index: 0xFF };
 
-  function getEquipment() {
-    return window.gameClient?.player?.equipment || null;
-  }
-
-  function getOpenContainers() {
-    return Array.from(window.gameClient?.player?.__openedContainers || []);
-  }
-
-  function findPickSource() {
-    const equipment = getEquipment();
-    if (equipment?.slots) {
-      for (let slotIndex = 0; slotIndex < equipment.slots.length; slotIndex += 1) {
-        const item = equipment.getSlotItem?.(slotIndex);
-        if (isPickItem(item)) return { which: equipment, index: slotIndex, item, location: "equipment" };
-      }
+    if (typeof mouse?.__handleItemUseWith === "function") {
+      try {
+        mouse.__handleItemUseWith(null, target);
+        return true;
+      } catch (error) {}
     }
 
-    for (const container of getOpenContainers()) {
-      const slots = container?.slots || [];
-      for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
-        const item = container.getSlotItem?.(slotIndex);
-        if (isPickItem(item)) return { which: container, index: slotIndex, item, location: "container" };
-      }
+    if (typeof mouse?.__handleThingUse === "function") {
+      try {
+        mouse.__handleThingUse(target);
+        return true;
+      } catch (error) {}
     }
 
-    return null;
+    if (typeof mouse?.__handleTileClick === "function") {
+      try {
+        mouse.__handleTileClick(entry.tile);
+        return true;
+      } catch (error) {}
+    }
+
+    return false;
   }
 
   function usePickOnRock(entry) {
-    if (!entry?.tile) return false;
-    const pickSource = findPickSource();
-
-    if (config.pickHotbarSlot) {
-      bot.clickHotbar?.(config.pickHotbarSlot - 1);
-    }
-
-    if (!pickSource) {
-      state.lastResult = "no pick found";
-      bot.log("mining skipped: no pick found in equipment or open backpacks");
+    if (!entry?.tile || state.using) return false;
+    const slot = normalizeHotbarSlot(config.pickHotbarSlot);
+    if (!slot) {
+      state.lastResult = "no pick hotkey";
       return false;
     }
 
-    window.gameClient?.mouse?.__handleItemUseWith?.(
-      { which: pickSource.which, index: pickSource.index },
-      { which: entry.tile, index: 0xFF }
-    );
+    const pressed = bot.clickHotbar?.(slot - 1);
+    if (!pressed) {
+      state.lastResult = "hotkey failed";
+      return false;
+    }
 
-    state.lastRockPosition = entry.position;
-    state.lastRockName = getMatchingRockName(entry.tile);
-    state.lastResult = "mined";
-    bot.log("mined random adjacent rock", {
-      position: entry.position,
-      rockName: state.lastRockName,
-      pickLocation: pickSource.location,
-      pickSlot: pickSource.index,
-      hotbarSlot: config.pickHotbarSlot,
-    });
+    state.using = true;
+    window.setTimeout(() => {
+      try {
+        const clicked = clickCrosshairOnTile(entry);
+        state.lastRockPosition = entry.position;
+        state.lastRockName = getMatchingRockName(entry.tile);
+        state.lastResult = clicked ? "mined" : "tile click failed";
+        bot.log(clicked ? "mined random adjacent rock" : "mining tile click failed", {
+          position: entry.position,
+          rockName: state.lastRockName,
+          hotbarSlot: slot,
+          crosshairDelayMs: config.crosshairDelayMs,
+        });
+      } finally {
+        state.using = false;
+        refreshUiValues();
+      }
+    }, config.crosshairDelayMs);
+
     return true;
   }
 
   function tick() {
-    if (!state.running || !config.enabled) return;
+    if (!state.running || !config.enabled || state.using) return;
     const now = Date.now();
     if (now - state.lastMineAt < config.cooldownMs) return;
     const rocks = getAdjacentRockTiles();
@@ -235,6 +234,7 @@ window.__minibiaBotBundle.installMiningModule = function installMiningModule(bot
   function stop(options = {}) {
     const persistEnabled = options.persistEnabled !== false;
     state.running = false;
+    state.using = false;
     if (state.timerId) {
       window.clearInterval(state.timerId);
       state.timerId = null;
@@ -252,6 +252,7 @@ window.__minibiaBotBundle.installMiningModule = function installMiningModule(bot
     if (Object.prototype.hasOwnProperty.call(next, "pickHotbarSlot")) config.pickHotbarSlot = normalizeHotbarSlot(next.pickHotbarSlot);
     if (Object.prototype.hasOwnProperty.call(next, "cooldownMs")) config.cooldownMs = nonNegativeInt(next.cooldownMs, config.cooldownMs);
     if (Object.prototype.hasOwnProperty.call(next, "rockNameFilter")) config.rockNameFilter = String(next.rockNameFilter || "").trim() || "rock";
+    if (Object.prototype.hasOwnProperty.call(next, "crosshairDelayMs")) config.crosshairDelayMs = nonNegativeInt(next.crosshairDelayMs, config.crosshairDelayMs);
     if (Object.prototype.hasOwnProperty.call(next, "enabled")) config.enabled = !!next.enabled;
     persistConfig();
     refreshUiValues();
@@ -262,6 +263,7 @@ window.__minibiaBotBundle.installMiningModule = function installMiningModule(bot
     const rocks = getAdjacentRockTiles();
     return {
       running: state.running,
+      using: state.using,
       config: { ...config },
       adjacentRockCount: rocks.length,
       lastRockPosition: state.lastRockPosition,
@@ -319,7 +321,7 @@ window.__minibiaBotBundle.installMiningModule = function installMiningModule(bot
       const rocks = getAdjacentRockTiles();
       const last = state.lastRockPosition ? ` last ${state.lastRockName || "rock"} at ${state.lastRockPosition.x},${state.lastRockPosition.y},${state.lastRockPosition.z}` : "";
       statusLabel.textContent = state.running
-        ? `Status: running, ${rocks.length} adjacent rock${rocks.length === 1 ? "" : "s"}${last}`
+        ? `Status: running, ${rocks.length} adjacent rock${rocks.length === 1 ? "" : "s"}, ${state.lastResult}${state.using ? "..." : ""}${last}`
         : `Status: idle, ${rocks.length} adjacent rock${rocks.length === 1 ? "" : "s"}`;
     }
   }
