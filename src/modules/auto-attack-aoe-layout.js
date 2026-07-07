@@ -83,26 +83,18 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     return Number.isFinite(n) && n > 0 ? n : fallback;
   }
 
-  function clickCenteredMonster(best) {
-    const monster = best?.target || best?.monsters?.[0] || null;
-    if (!monster) return false;
-    const targetRef = { which: monster, index: 0xFF };
-    const mouse = window.gameClient?.mouse;
-    if (typeof mouse?.__handleItemUseWith === "function") {
-      try { mouse.__handleItemUseWith(null, targetRef); return true; } catch (error) {}
-    }
-    if (typeof mouse?.__handleThingUse === "function") {
-      try { mouse.__handleThingUse(targetRef); return true; } catch (error) {}
-    }
-    if (typeof mouse?.__handleCreatureClick === "function") {
-      try { mouse.__handleCreatureClick(monster); return true; } catch (error) {}
-    }
-    return false;
+  function getCurrentTarget() {
+    return window.minibiaBot?.attack?.getCurrentTarget?.() || window.gameClient?.player?.__target || null;
+  }
+
+  function isSameTarget(left, right) {
+    return !!left && !!right && (left === right || left.id === right.id);
   }
 
   function setTarget(monster) {
     try {
-      if (!monster || !window.gameClient?.player || typeof window.gameClient.send !== "function" || typeof TargetPacket !== "function") return false;
+      if (!monster || isSameTarget(getCurrentTarget(), monster)) return true;
+      if (!window.gameClient?.player || typeof window.gameClient.send !== "function" || typeof TargetPacket !== "function") return false;
       window.gameClient.player.setTarget(monster);
       window.gameClient.send(new TargetPacket(monster.id));
       return true;
@@ -129,28 +121,27 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       if (!best || !monster || best.count < minMonsters) return;
 
       shooting = true;
-      setTarget(monster);
-      const pressed = bot.clickHotbar?.(slot - 1);
-      if (!pressed) {
+      if (!setTarget(monster)) {
+        bot.log?.("great fireball target switch failed", { target: monster.name || "Mob", position: best.position });
         shooting = false;
         return;
       }
 
       window.setTimeout(() => {
-        const shot = clickCenteredMonster(best);
-        if (shot) {
+        const pressed = bot.clickHotbar?.(slot - 1);
+        if (pressed) {
           lastShotAt = Date.now();
-          bot.log?.("used great fireball on monster center", {
+          bot.log?.("used great fireball hotkey on current target", {
             slot,
             monsterCount: best.count,
             target: monster.name || "Mob",
             position: best.position,
           });
         } else {
-          bot.log?.("great fireball monster center click failed", { target: monster.name || "Mob", position: best.position });
+          bot.log?.("great fireball hotkey press failed", { slot, target: monster.name || "Mob" });
         }
         shooting = false;
-      }, 125);
+      }, 75);
     } catch (error) {
       shooting = false;
     }
