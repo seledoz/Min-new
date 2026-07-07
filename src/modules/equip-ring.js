@@ -3,6 +3,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModule(bot) {
   const configStorageKey = "minibiaBot.equipRing.config";
   const RING_SLOT = 8;
+  const PZ_FLAG = 1;
   const ALLOWED_RINGS = [
     { name: "ring of healing", priority: 1 },
     { name: "life ring", priority: 2 },
@@ -11,6 +12,7 @@ window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModu
     running: false,
     timerId: null,
     lastEquipAt: 0,
+    lastUnequipAt: 0,
   };
   let resumeListenersAttached = false;
 
@@ -18,11 +20,14 @@ window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModu
     {
       tickMs: 1000,
       equipCooldownMs: 1500,
+      unequipCooldownMs: 1500,
+      unequipInProtectionZone: true,
       enabled: false,
     },
     bot.storage.get(configStorageKey, {})
   );
   config.tickMs = 1000;
+  config.unequipInProtectionZone = config.unequipInProtectionZone !== false;
 
   function persistConfig() {
     bot.storage.set(configStorageKey, { ...config });
@@ -73,6 +78,35 @@ window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModu
     return !!getEquippedRing();
   }
 
+  function getLoadedTiles() {
+    return bot.pz?.getLoadedTiles?.() || [];
+  }
+
+  function isPlayerInProtectionZone() {
+    const position = bot.getPlayerPosition?.();
+    if (!position) return false;
+    return getLoadedTiles().some((tile) => {
+      const tilePosition = tile?.__position;
+      return tilePosition &&
+        tilePosition.x === position.x &&
+        tilePosition.y === position.y &&
+        tilePosition.z === position.z &&
+        ((tile.flags || 0) & PZ_FLAG) !== 0;
+    });
+  }
+
+  function findFirstEmptyContainerSlot() {
+    for (const container of getOpenContainers()) {
+      const slots = container?.slots || [];
+      for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
+        if (!container.getSlotItem?.(slotIndex)) {
+          return { container, slotIndex };
+        }
+      }
+    }
+    return null;
+  }
+
   function findBestRingSource() {
     const equipment = getEquipment();
     if (!equipment) {
@@ -116,19 +150,52 @@ window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModu
     return best;
   }
 
+  function canUnequipRingInProtectionZone(now = Date.now()) {
+    if (!config.enabled || !config.unequipInProtectionZone || !isPlayerInProtectionZone()) return false;
+    if (now - state.lastUnequipAt < (config.unequipCooldownMs || 1500)) return false;
+    const equippedRing = getEquippedRing();
+    return !!getAllowedRingInfo(equippedRing) && !!findFirstEmptyContainerSlot();
+  }
+
+  function tryUnequipRingInProtectionZone(now = Date.now()) {
+    if (!canUnequipRingInProtectionZone(now)) return false;
+    const equipment = getEquipment();
+    const equippedRing = getEquippedRing();
+    const destination = findFirstEmptyContainerSlot();
+    if (!equipment || !equippedRing || !destination) return false;
+
+    const from = { which: equipment, index: RING_SLOT };
+    const to = { which: destination.container, index: destination.slotIndex };
+    const count = (typeof equippedRing.getCount === "function" ? equippedRing.getCount() : equippedRing.count) || 1;
+
+    window.gameClient.send(new ItemMovePacket(from, to, count));
+    state.lastUnequipAt = now;
+    bot.log("unequipped ring in protection zone", {
+      name: getItemName(equippedRing),
+      toContainerId: destination.container?.__containerId ?? null,
+      toSlot: destination.slotIndex,
+    });
+    return true;
+  }
+
   function getGateStatus(now = Date.now()) {
     const equipment = getEquipment();
     const source = findBestRingSource();
+    const inProtectionZone = isPlayerInProtectionZone();
     const cooldownRemainingMs = Math.max(0, config.equipCooldownMs - (now - state.lastEquipAt));
+    const unequipCooldownRemainingMs = Math.max(0, (config.unequipCooldownMs || 1500) - (now - state.lastUnequipAt));
 
     return {
       hasEquipment: !!equipment,
       hasRingEquipped: hasEquippedRing(),
       hasRingAvailable: !!source,
+      inProtectionZone,
       cooldownReady: cooldownRemainingMs === 0,
       cooldownRemainingMs,
+      unequipCooldownRemainingMs,
       source,
-      canEquip: !!equipment && !hasEquippedRing() && !!source && cooldownRemainingMs === 0,
+      canEquip: !!equipment && !inProtectionZone && !hasEquippedRing() && !!source && cooldownRemainingMs === 0,
+      canUnequipInProtectionZone: canUnequipRingInProtectionZone(now),
     };
   }
 
@@ -221,7 +288,9 @@ window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModu
     if (!state.running) return;
 
     try {
-      tryEquipRing();
+      if (!tryUnequipRingInProtectionZone()) {
+        tryEquipRing();
+      }
     } catch (error) {
       bot.log("equip ring tick failed", error?.message || error);
     } finally {
@@ -232,6 +301,7 @@ window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModu
   function start(overrides = {}) {
     Object.assign(config, overrides, { enabled: true });
     config.tickMs = 1000;
+    config.unequipInProtectionZone = config.unequipInProtectionZone !== false;
     persistConfig();
 
     if (state.running) {
@@ -272,6 +342,7 @@ window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModu
       gates: getGateStatus(),
       equippedRing: getEquippedRing(),
       lastEquipAt: state.lastEquipAt,
+      lastUnequipAt: state.lastUnequipAt,
       allowedRings: ALLOWED_RINGS.map((ring) => ring.name),
     };
   }
@@ -279,6 +350,7 @@ window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModu
   function updateConfig(nextConfig = {}) {
     Object.assign(config, nextConfig);
     config.tickMs = 1000;
+    config.unequipInProtectionZone = config.unequipInProtectionZone !== false;
     persistConfig();
     bot.log("equip ring config updated", { ...config });
     return { ...config };
@@ -300,5 +372,7 @@ window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModu
     getGateStatus,
     canEquipRing,
     tryEquipRing,
+    isPlayerInProtectionZone,
+    tryUnequipRingInProtectionZone,
   };
 };
