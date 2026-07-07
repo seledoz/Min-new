@@ -13,7 +13,11 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
     lastEnergyWaveHotkeyAt: 0,
     lastEnergyWaveMonsterCount: 0,
     lastEnergyWaveTargetName: "",
+    lastGfbHotkeyAt: 0,
+    lastGfbMonsterCount: 0,
+    lastGfbTargetName: "",
   };
+
   const config = Object.assign({
     enabled: false,
     spellHotbarSlot: null,
@@ -27,6 +31,10 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
     energyWaveHotbarSlot: null,
     energyWaveMinMonsters: 3,
     energyWaveCooldownMs: 2000,
+    gfbEnabled: false,
+    gfbHotbarSlot: null,
+    gfbMinMonsters: 4,
+    gfbCooldownMs: 2000,
   }, bot.storage.get(configStorageKey, {}) || {});
 
   config.spellHotbarSlot = normalizeHotbarSlot(config.spellHotbarSlot);
@@ -40,6 +48,10 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
   config.energyWaveHotbarSlot = normalizeHotbarSlot(config.energyWaveHotbarSlot);
   config.energyWaveMinMonsters = positiveInt(config.energyWaveMinMonsters, 3);
   config.energyWaveCooldownMs = nonNegativeInt(config.energyWaveCooldownMs, 2000);
+  config.gfbEnabled = !!config.gfbEnabled;
+  config.gfbHotbarSlot = normalizeHotbarSlot(config.gfbHotbarSlot);
+  config.gfbMinMonsters = positiveInt(config.gfbMinMonsters, 4);
+  config.gfbCooldownMs = nonNegativeInt(config.gfbCooldownMs, 2000);
 
   function persistConfig() { bot.storage.set(configStorageKey, { ...config }); }
   function normalizeHotbarSlot(slot) { const n = Math.trunc(Number(slot)); return Number.isFinite(n) && n >= 1 && n <= 12 ? n : null; }
@@ -59,6 +71,10 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
   function tileDistance(a, b) {
     if (!a || !b || Number(a.z) !== Number(b.z)) return Number.POSITIVE_INFINITY;
     return Math.max(Math.abs(Number(a.x) - Number(b.x)), Math.abs(Number(a.y) - Number(b.y)));
+  }
+
+  function positionKey(position) {
+    return position ? `${position.x},${position.y},${position.z}` : "";
   }
 
   function passesTargetFilters(monster) {
@@ -131,31 +147,17 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
     const dx = targetPosition.x - playerPosition.x;
     const dy = targetPosition.y - playerPosition.y;
     if (dx === 0 && dy === 0) return null;
-
-    if (Math.abs(dx) > Math.abs(dy)) {
-      return dx > 0 ? "east" : "west";
-    }
+    if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? "east" : "west";
     return dy > 0 ? "south" : "north";
   }
 
   function getEnergyWaveTiles(playerPosition, direction) {
     if (!playerPosition || !direction) return [];
-    const forward = {
-      north: { x: 0, y: -1 },
-      south: { x: 0, y: 1 },
-      east: { x: 1, y: 0 },
-      west: { x: -1, y: 0 },
-    }[direction];
-    const side = {
-      north: { x: 1, y: 0 },
-      south: { x: 1, y: 0 },
-      east: { x: 0, y: 1 },
-      west: { x: 0, y: 1 },
-    }[direction];
+    const forward = { north: { x: 0, y: -1 }, south: { x: 0, y: 1 }, east: { x: 1, y: 0 }, west: { x: -1, y: 0 } }[direction];
+    const side = { north: { x: 1, y: 0 }, south: { x: 1, y: 0 }, east: { x: 0, y: 1 }, west: { x: 0, y: 1 } }[direction];
     if (!forward || !side) return [];
 
     const tiles = [];
-    // Server-specific Energy Wave shape: 1 tile forward, then 3 / 3 / 3.
     tiles.push({ x: playerPosition.x + forward.x, y: playerPosition.y + forward.y, z: playerPosition.z });
     for (let distance = 2; distance <= 4; distance += 1) {
       for (let offset = -1; offset <= 1; offset += 1) {
@@ -169,17 +171,11 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
     return tiles;
   }
 
-  function positionKey(position) {
-    return position ? `${position.x},${position.y},${position.z}` : "";
-  }
-
   function evaluateEnergyWaveForTarget(target, monsters = getVisibleMonsters()) {
     const playerPosition = getPosition(bot.getPlayerPosition?.());
     const targetPosition = getPosition(target);
     const direction = getDirectionToTarget(playerPosition, targetPosition);
-    if (!playerPosition || !targetPosition || !direction) {
-      return { target, direction, count: 0, monsters: [], tiles: [] };
-    }
+    if (!playerPosition || !targetPosition || !direction) return { target, direction, count: 0, monsters: [], tiles: [] };
 
     const tileKeys = new Set(getEnergyWaveTiles(playerPosition, direction).map(positionKey));
     const hitMonsters = monsters.filter((monster) => {
@@ -235,20 +231,126 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
       state.lastEnergyWaveHotkeyAt = now;
       state.lastEnergyWaveMonsterCount = best.count;
       state.lastEnergyWaveTargetName = best.target?.name || "Mob";
-      bot.log("used energy wave hotkey", {
-        slot,
-        monsterCount: best.count,
-        target: state.lastEnergyWaveTargetName,
-        direction: best.direction,
-        shape: "1-3-3-3",
-      });
+      bot.log("used energy wave hotkey", { slot, monsterCount: best.count, target: state.lastEnergyWaveTargetName, direction: best.direction, shape: "1-3-3-3" });
+    }
+    refreshUiValues();
+    return clicked;
+  }
+
+  function getGfbTiles(centerPosition) {
+    if (!centerPosition) return [];
+    const rowWidths = [1, 5, 5, 7, 5, 5, 1];
+    const tiles = [];
+    for (let row = 0; row < rowWidths.length; row += 1) {
+      const half = Math.floor(rowWidths[row] / 2);
+      const yOffset = row - 3;
+      for (let xOffset = -half; xOffset <= half; xOffset += 1) {
+        tiles.push({ x: centerPosition.x + xOffset, y: centerPosition.y + yOffset, z: centerPosition.z });
+      }
+    }
+    return tiles;
+  }
+
+  function evaluateGfbAtPosition(centerPosition, monsters = getVisibleMonsters()) {
+    if (!centerPosition) return { position: centerPosition, count: 0, monsters: [], tiles: [] };
+    const tileKeys = new Set(getGfbTiles(centerPosition).map(positionKey));
+    const hitMonsters = monsters.filter((monster) => {
+      const position = getPosition(monster);
+      return position && position.z === centerPosition.z && tileKeys.has(positionKey(position));
+    });
+    return { position: centerPosition, count: hitMonsters.length, monsters: hitMonsters, tiles: Array.from(tileKeys) };
+  }
+
+  function getBestGfbCandidate() {
+    const playerPosition = getPosition(bot.getPlayerPosition?.());
+    if (!playerPosition) return null;
+    const monsters = getVisibleMonsters().filter((monster) => {
+      const position = getPosition(monster);
+      return position && position.z === playerPosition.z && tileDistance(playerPosition, position) <= 7;
+    });
+    if (!monsters.length) return null;
+
+    const candidatesByKey = new Map();
+    monsters.forEach((monster) => {
+      const position = getPosition(monster);
+      if (position) candidatesByKey.set(positionKey(position), { position, target: monster });
+    });
+
+    const evaluations = Array.from(candidatesByKey.values()).map((candidate) => ({
+      ...evaluateGfbAtPosition(candidate.position, monsters),
+      target: candidate.target,
+    }));
+
+    evaluations.sort((left, right) => {
+      const countDiff = right.count - left.count;
+      if (countDiff) return countDiff;
+      return tileDistance(playerPosition, left.position) - tileDistance(playerPosition, right.position);
+    });
+
+    return evaluations[0] || null;
+  }
+
+  function getTileFromPosition(position) {
+    if (!position) return null;
+    if (typeof Position === "function") {
+      return window.gameClient?.world?.getTileFromWorldPosition?.(new Position(position.x, position.y, position.z)) || null;
+    }
+    return window.gameClient?.world?.getTileFromWorldPosition?.(position) || null;
+  }
+
+  function clickCrosshairTarget(best) {
+    const slot = normalizeHotbarSlot(config.gfbHotbarSlot);
+    if (!slot || !best?.position) return false;
+    if (!bot.clickHotbar(slot - 1)) return false;
+
+    const tile = getTileFromPosition(best.position);
+    const target = best.target || best.monsters?.[0] || tile;
+    const mouse = window.gameClient?.mouse;
+    const targetRef = tile ? { which: tile, index: 0xFF } : target ? { which: target, index: 0xFF } : null;
+
+    if (targetRef && typeof mouse?.__handleItemUseWith === "function") {
+      try { mouse.__handleItemUseWith(null, targetRef); return true; } catch (error) {}
+    }
+    if (targetRef && typeof mouse?.__handleThingUse === "function") {
+      try { mouse.__handleThingUse(targetRef); return true; } catch (error) {}
+    }
+    if (tile && typeof mouse?.__handleTileClick === "function") {
+      try { mouse.__handleTileClick(tile); return true; } catch (error) {}
+    }
+    if (target && typeof mouse?.__handleCreatureClick === "function") {
+      try { mouse.__handleCreatureClick(target); return true; } catch (error) {}
+    }
+
+    bot.log("GFB crosshair target could not be clicked by known mouse handlers", { position: best.position, target: best.target?.name || "Mob" });
+    return false;
+  }
+
+  function canCastGfb(now = Date.now()) {
+    const slot = normalizeHotbarSlot(config.gfbHotbarSlot);
+    if (!config.enabled || !state.running || !config.gfbEnabled || !slot) return false;
+    if (now - state.lastGfbHotkeyAt < nonNegativeInt(config.gfbCooldownMs, 2000)) return false;
+    const best = getBestGfbCandidate();
+    return !!best && best.count >= positiveInt(config.gfbMinMonsters, 4);
+  }
+
+  function triggerGfb(now = Date.now()) {
+    if (!canCastGfb(now)) return false;
+    const best = getBestGfbCandidate();
+    if (!best || best.count < positiveInt(config.gfbMinMonsters, 4)) return false;
+
+    const clicked = clickCrosshairTarget(best);
+    if (clicked) {
+      state.lastGfbHotkeyAt = now;
+      state.lastGfbMonsterCount = best.count;
+      state.lastGfbTargetName = best.target?.name || best.monsters?.[0]?.name || "Mob";
+      bot.log("used great fireball hotkey", { slot: config.gfbHotbarSlot, monsterCount: best.count, target: state.lastGfbTargetName, position: best.position, shape: "1-5-5-7-5-5-1" });
     }
     refreshUiValues();
     return clicked;
   }
 
   function triggerSpell(now = Date.now()) {
-    return triggerEnergyWave(now) || triggerSquareSpell(now);
+    return triggerEnergyWave(now) || triggerGfb(now) || triggerSquareSpell(now);
   }
 
   function tick() {
@@ -289,6 +391,10 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
     if (Object.prototype.hasOwnProperty.call(nextConfig, "energyWaveHotbarSlot")) nextConfig.energyWaveHotbarSlot = normalizeHotbarSlot(nextConfig.energyWaveHotbarSlot);
     if (Object.prototype.hasOwnProperty.call(nextConfig, "energyWaveMinMonsters")) nextConfig.energyWaveMinMonsters = positiveInt(nextConfig.energyWaveMinMonsters, config.energyWaveMinMonsters || 3);
     if (Object.prototype.hasOwnProperty.call(nextConfig, "energyWaveCooldownMs")) nextConfig.energyWaveCooldownMs = nonNegativeInt(nextConfig.energyWaveCooldownMs, config.energyWaveCooldownMs || 2000);
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "gfbEnabled")) nextConfig.gfbEnabled = !!nextConfig.gfbEnabled;
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "gfbHotbarSlot")) nextConfig.gfbHotbarSlot = normalizeHotbarSlot(nextConfig.gfbHotbarSlot);
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "gfbMinMonsters")) nextConfig.gfbMinMonsters = positiveInt(nextConfig.gfbMinMonsters, config.gfbMinMonsters || 4);
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "gfbCooldownMs")) nextConfig.gfbCooldownMs = nonNegativeInt(nextConfig.gfbCooldownMs, config.gfbCooldownMs || 2000);
     Object.assign(config, nextConfig);
     persistConfig();
     if (!options.silent) refreshUiValues();
@@ -298,6 +404,7 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
   function status() {
     const monsters = getCandidateMonsters();
     const bestWave = getBestEnergyWaveCandidate();
+    const bestGfb = getBestGfbCandidate();
     return {
       running: state.running,
       config: { ...config },
@@ -308,7 +415,11 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
       bestEnergyWaveCount: bestWave?.count || 0,
       bestEnergyWaveTargetName: bestWave?.target?.name || "",
       bestEnergyWaveDirection: bestWave?.direction || "",
-      ready: canCastSquare(Date.now()) || canCastEnergyWave(Date.now()),
+      lastGfbMonsterCount: state.lastGfbMonsterCount,
+      lastGfbTargetName: state.lastGfbTargetName,
+      bestGfbCount: bestGfb?.count || 0,
+      bestGfbTargetName: bestGfb?.target?.name || "",
+      ready: canCastSquare(Date.now()) || canCastEnergyWave(Date.now()) || canCastGfb(Date.now()),
     };
   }
 
@@ -346,17 +457,24 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
           </div>
           <div class="mb-small-note">Works while manually hunting. Switches target if another monster gives a better wave, then uses the hotkey. Pattern: 1 tile forward, then 3 / 3 / 3.</div>
         </div>
+        <div class="mb-section">
+          <div class="mb-label">Great Fireball 1-5-5-7-5-5-1</div>
+          <label class="mb-toggle"><input type="checkbox" id="minibia-bot-gfb-enabled" /><span>Enable Great Fireball</span></label>
+          <div class="mb-field-grid">
+            <label class="mb-field"><span class="mb-field-label">GFB Hotkey</span><input type="number" id="minibia-bot-gfb-hotkey" min="1" max="12" placeholder="8" /></label>
+            <label class="mb-field"><span class="mb-field-label">GFB Min Creatures</span><input type="number" id="minibia-bot-gfb-monsters" min="1" placeholder="4" /></label>
+            <label class="mb-field"><span class="mb-field-label">GFB Cooldown MS</span><input type="number" id="minibia-bot-gfb-cooldown" min="0" placeholder="2000" /></label>
+          </div>
+          <div class="mb-small-note">Hotkey should have Great Fireball selected on crosshairs. Picks the best 1-5-5-7-5-5-1 shot.</div>
+        </div>
         <label class="mb-toggle"><input type="checkbox" id="minibia-bot-auto-attack-aoe-require-attack" /><span>Only square AoE while Auto Attack runs</span></label>
         <label class="mb-toggle"><input type="checkbox" id="minibia-bot-auto-attack-aoe-respect-filters" /><span>Use target filters</span></label>
         <div class="mb-small-note" id="minibia-bot-auto-attack-aoe-status">AoE: idle</div>
       </div>`;
 
     const anchor = findAutoAttackAnchor(panel);
-    if (anchor && anchor.parentElement) {
-      anchor.insertAdjacentElement("afterend", section);
-    } else {
-      (panel.querySelector(".mb-main-column") || panel.querySelector(".mb-body") || panel).appendChild(section);
-    }
+    if (anchor && anchor.parentElement) anchor.insertAdjacentElement("afterend", section);
+    else (panel.querySelector(".mb-main-column") || panel.querySelector(".mb-body") || panel).appendChild(section);
 
     const enabled = section.querySelector("#minibia-bot-auto-attack-aoe-enabled");
     const hotkey = section.querySelector("#minibia-bot-auto-attack-aoe-hotkey");
@@ -367,6 +485,10 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
     const waveHotkey = section.querySelector("#minibia-bot-energy-wave-hotkey");
     const waveMonsters = section.querySelector("#minibia-bot-energy-wave-monsters");
     const waveCooldown = section.querySelector("#minibia-bot-energy-wave-cooldown");
+    const gfbEnabled = section.querySelector("#minibia-bot-gfb-enabled");
+    const gfbHotkey = section.querySelector("#minibia-bot-gfb-hotkey");
+    const gfbMonsters = section.querySelector("#minibia-bot-gfb-monsters");
+    const gfbCooldown = section.querySelector("#minibia-bot-gfb-cooldown");
     const requireAttack = section.querySelector("#minibia-bot-auto-attack-aoe-require-attack");
     const filters = section.querySelector("#minibia-bot-auto-attack-aoe-respect-filters");
     enabled?.addEventListener("change", () => enabled.checked ? start() : stop());
@@ -378,6 +500,10 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
     waveHotkey?.addEventListener("change", () => updateConfig({ energyWaveHotbarSlot: waveHotkey.value }));
     waveMonsters?.addEventListener("change", () => updateConfig({ energyWaveMinMonsters: waveMonsters.value }));
     waveCooldown?.addEventListener("change", () => updateConfig({ energyWaveCooldownMs: waveCooldown.value }));
+    gfbEnabled?.addEventListener("change", () => updateConfig({ gfbEnabled: gfbEnabled.checked }));
+    gfbHotkey?.addEventListener("change", () => updateConfig({ gfbHotbarSlot: gfbHotkey.value }));
+    gfbMonsters?.addEventListener("change", () => updateConfig({ gfbMinMonsters: gfbMonsters.value }));
+    gfbCooldown?.addEventListener("change", () => updateConfig({ gfbCooldownMs: gfbCooldown.value }));
     requireAttack?.addEventListener("change", () => updateConfig({ requireAutoAttackRunning: requireAttack.checked }));
     filters?.addEventListener("change", () => updateConfig({ respectTargetFilters: filters.checked }));
     refreshUiValues();
@@ -393,10 +519,15 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
     const waveHotkey = document.getElementById("minibia-bot-energy-wave-hotkey");
     const waveMonsters = document.getElementById("minibia-bot-energy-wave-monsters");
     const waveCooldown = document.getElementById("minibia-bot-energy-wave-cooldown");
+    const gfbEnabled = document.getElementById("minibia-bot-gfb-enabled");
+    const gfbHotkey = document.getElementById("minibia-bot-gfb-hotkey");
+    const gfbMonsters = document.getElementById("minibia-bot-gfb-monsters");
+    const gfbCooldown = document.getElementById("minibia-bot-gfb-cooldown");
     const requireAttack = document.getElementById("minibia-bot-auto-attack-aoe-require-attack");
     const filters = document.getElementById("minibia-bot-auto-attack-aoe-respect-filters");
     const statusLabel = document.getElementById("minibia-bot-auto-attack-aoe-status");
     const bestWave = getBestEnergyWaveCandidate();
+    const bestGfb = getBestGfbCandidate();
     if (enabled) enabled.checked = !!state.running;
     if (hotkey) hotkey.value = config.spellHotbarSlot || "";
     if (monsters) monsters.value = config.minMonsters;
@@ -406,11 +537,15 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
     if (waveHotkey) waveHotkey.value = config.energyWaveHotbarSlot || "";
     if (waveMonsters) waveMonsters.value = config.energyWaveMinMonsters;
     if (waveCooldown) waveCooldown.value = config.energyWaveCooldownMs;
+    if (gfbEnabled) gfbEnabled.checked = !!config.gfbEnabled;
+    if (gfbHotkey) gfbHotkey.value = config.gfbHotbarSlot || "";
+    if (gfbMonsters) gfbMonsters.value = config.gfbMinMonsters;
+    if (gfbCooldown) gfbCooldown.value = config.gfbCooldownMs;
     if (requireAttack) requireAttack.checked = !!config.requireAutoAttackRunning;
     if (filters) filters.checked = !!config.respectTargetFilters;
     if (statusLabel) {
       statusLabel.textContent = state.running
-        ? `AoE: square ${getCandidateMonsters().length}/${config.minMonsters}; wave ${bestWave?.count || 0}/${config.energyWaveMinMonsters}${bestWave?.target ? ` via ${bestWave.target.name || "Mob"}` : ""}`
+        ? `AoE: square ${getCandidateMonsters().length}/${config.minMonsters}; wave ${bestWave?.count || 0}/${config.energyWaveMinMonsters}; gfb ${bestGfb?.count || 0}/${config.gfbMinMonsters}`
         : "AoE: off";
     }
   }
@@ -429,9 +564,13 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
     triggerSpell,
     triggerSquareSpell,
     triggerEnergyWave,
+    triggerGfb,
     getBestEnergyWaveCandidate,
     evaluateEnergyWaveForTarget,
     getEnergyWaveTiles,
+    getBestGfbCandidate,
+    evaluateGfbAtPosition,
+    getGfbTiles,
     destroy,
     config,
   };
