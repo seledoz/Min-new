@@ -3,6 +3,7 @@
   const persistedEnabledModules = [
     ["rune", "minibiaBot.rune.config"],
     ["heal", "minibiaBot.heal.config"],
+    ["damageTtsAlert", "minibiaBot.damageTtsAlert.config"],
     ["invisible", "minibiaBot.invisible.config"],
     ["magicShield", "minibiaBot.magicShield.config"],
     ["attack", "minibiaBot.attack.config"],
@@ -66,6 +67,7 @@
     currentBundle.installPanicModule(bot);
     currentBundle.installRuneModule(bot);
     currentBundle.installHealModule(bot);
+    currentBundle.installDamageTtsAlertModule?.(bot);
     currentBundle.installAutoInvisibleModule(bot);
     currentBundle.installAutoMagicShieldModule(bot);
     currentBundle.installAutoAttackModule(bot);
@@ -99,6 +101,7 @@
       panic: bot.panic.status(),
       rune: bot.rune.status(),
       heal: bot.heal.status(),
+      damageTtsAlert: bot.damageTtsAlert?.status?.() || null,
       invisible: bot.invisible.status(),
       magicShield: bot.magicShield.status(),
       attack: bot.attack.status(),
@@ -121,7 +124,7 @@
       branch: bot.version.branch,
       commit: bot.version.commit,
       buildDate: bot.version.date,
-      modules: ["pz", "xray", "panic", "rune", "heal", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "equipRing", "mining", "eat", "talk", "ui"],
+      modules: ["pz", "xray", "panic", "rune", "heal", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "equipRing", "mining", "eat", "talk", "ui"],
     });
     console.log("minibiaBot.reload()");
     console.log("minibiaBot.attackExclude.addName(\"monster name\")");
@@ -132,6 +135,8 @@
     console.log("minibiaBot.redTextAlert.stop()");
     console.log("minibiaBot.cave.start()");
     console.log("minibiaBot.cave.stop()");
+    console.log("minibiaBot.damageTtsAlert.start()");
+    console.log("minibiaBot.damageTtsAlert.stop()");
     console.log("minibiaBot.mining.start({ pickHotbarSlot: 5 })");
     console.log("minibiaBot.mining.stop()");
     return bot;
