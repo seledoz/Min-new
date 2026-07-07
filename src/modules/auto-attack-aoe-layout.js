@@ -74,6 +74,41 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
   moveAoeSection();
 })();
 
+(function delayUseWithTargetForGfb() {
+  function installDelay() {
+    try {
+      const mouse = window.gameClient?.mouse;
+      if (!mouse || typeof mouse.__handleItemUseWith !== "function") return false;
+      if (mouse.__gfbUseWithDelayInstalled) return true;
+
+      const originalUseWith = mouse.__handleItemUseWith.bind(mouse);
+      mouse.__gfbUseWithDelayInstalled = true;
+      mouse.__handleItemUseWith = function delayedUseWith(item, target) {
+        const bot = window.minibiaBot;
+        const gfbOn = !!bot?.attackAoe?.config?.gfbEnabled;
+        const slotSet = !!bot?.attackAoe?.config?.gfbHotbarSlot;
+        if (gfbOn && slotSet) {
+          window.setTimeout(() => originalUseWith(item, target), 125);
+          return true;
+        }
+        return originalUseWith(item, target);
+      };
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  let attempts = 0;
+  const retryId = window.setInterval(() => {
+    attempts += 1;
+    const installed = installDelay();
+    if (installed || attempts >= 30) window.clearInterval(retryId);
+  }, 1000);
+
+  installDelay();
+})();
+
 (function forceNormalAutoAttackRangeSix() {
   const storageKey = "minibiaBot.attack.config";
 
