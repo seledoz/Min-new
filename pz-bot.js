@@ -48,11 +48,26 @@
     }
   }
 
+  function removePanelDebugSection() {
+    const debugToggle = document.getElementById("minibia-bot-debug-enabled");
+    const debugSection = debugToggle?.closest?.(".mb-section");
+    if (debugSection) {
+      debugSection.remove();
+      return;
+    }
+
+    const labels = Array.from(document.querySelectorAll("#minibia-bot-panel .mb-label"));
+    const debugLabel = labels.find((label) => String(label.textContent || "").trim().toLowerCase() === "debug");
+    debugLabel?.closest?.(".mb-section")?.remove();
+  }
+
   function keepPanelTitleBlank() {
     blankPanelTitle();
+    removePanelDebugSection();
     let attempts = 0;
     const timerId = window.setInterval(() => {
       blankPanelTitle();
+      removePanelDebugSection();
       document.getElementById("minibia-bot-waypoint-profiles-section")?.remove();
       attempts += 1;
       if (attempts >= 20) window.clearInterval(timerId);
