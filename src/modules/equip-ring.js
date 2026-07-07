@@ -3,6 +3,10 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModule(bot) {
   const configStorageKey = "minibiaBot.equipRing.config";
   const RING_SLOT = 8;
+  const ALLOWED_RINGS = [
+    { name: "ring of healing", priority: 1 },
+    { name: "life ring", priority: 2 },
+  ];
   const state = {
     running: false,
     timerId: null,
@@ -47,23 +51,17 @@ window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModu
     return definition?.properties?.name || item?.name || "";
   }
 
+  function normalizeName(name) {
+    return String(name || "").trim().toLowerCase();
+  }
+
+  function getAllowedRingInfo(item) {
+    const itemName = normalizeName(getItemName(item));
+    return ALLOWED_RINGS.find((ring) => itemName === ring.name) || null;
+  }
+
   function isRingItem(item) {
-    if (!item) {
-      return false;
-    }
-
-    const definition = getItemDefinition(item);
-    const slotType = String(
-      definition?.properties?.slotType ||
-      definition?.properties?.slot ||
-      ""
-    ).trim().toLowerCase();
-
-    if (slotType === "ring") {
-      return true;
-    }
-
-    return /\bring\b/i.test(getItemName(item));
+    return !!getAllowedRingInfo(item);
   }
 
   function getEquippedRing() {
@@ -82,17 +80,25 @@ window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModu
     }
 
     let best = null;
-    let bestCount = -1;
 
     const consider = (container, slotIndex, item) => {
-      if (!isRingItem(item)) {
+      const allowedRing = getAllowedRingInfo(item);
+      if (!allowedRing) {
         return;
       }
 
       const count = (typeof item.getCount === "function" ? item.getCount() : item.count) || 1;
-      if (count > bestCount) {
-        bestCount = count;
-        best = { container, slotIndex, item, count, name: getItemName(item) };
+      const candidate = {
+        container,
+        slotIndex,
+        item,
+        count,
+        name: getItemName(item),
+        priority: allowedRing.priority,
+      };
+
+      if (!best || candidate.priority < best.priority || (candidate.priority === best.priority && candidate.count > best.count)) {
+        best = candidate;
       }
     };
 
@@ -155,6 +161,7 @@ window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModu
     state.lastEquipAt = now;
     bot.log("equipped ring", {
       name: source.name,
+      priority: source.priority,
       fromContainerId: source.container?.__containerId ?? null,
       fromSlot: source.slotIndex,
     });
@@ -265,6 +272,7 @@ window.__minibiaBotBundle.installEquipRingModule = function installEquipRingModu
       gates: getGateStatus(),
       equippedRing: getEquippedRing(),
       lastEquipAt: state.lastEquipAt,
+      allowedRings: ALLOWED_RINGS.map((ring) => ring.name),
     };
   }
 
