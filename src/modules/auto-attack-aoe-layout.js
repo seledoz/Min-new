@@ -102,3 +102,34 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
   const observer = new MutationObserver(tick);
   observer.observe(document.documentElement, { childList: true, subtree: true });
 })();
+
+(function forceNormalAutoAttackRangeSix() {
+  const storageKey = "minibiaBot.attack.config";
+
+  function persistSix() {
+    try {
+      const rawValue = window.localStorage.getItem(storageKey);
+      const config = rawValue ? JSON.parse(rawValue) : {};
+      if (config.maxTargetDistance !== 6) {
+        config.maxTargetDistance = 6;
+        window.localStorage.setItem(storageKey, JSON.stringify(config));
+      }
+    } catch (error) {}
+  }
+
+  function applySix() {
+    try {
+      persistSix();
+      const attackConfig = window.minibiaBot?.attack?.config;
+      if (attackConfig && attackConfig.maxTargetDistance !== 6) {
+        attackConfig.maxTargetDistance = 6;
+      }
+    } catch (error) {}
+  }
+
+  applySix();
+  window.setTimeout(applySix, 0);
+  window.setTimeout(applySix, 500);
+  window.setTimeout(applySix, 1500);
+  window.setInterval(applySix, 1000);
+})();
