@@ -150,6 +150,33 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
   window.setInterval(tickGfbOnly, 250);
 })();
 
+(function configureCaptchaAlarmTiming() {
+  const desiredConfig = {
+    beepIntervalMs: 3000,
+    alertDurationMs: 30000,
+  };
+
+  function applyTiming() {
+    try {
+      const alertModule = window.minibiaBot?.redTextAlert;
+      if (!alertModule?.updateConfig) return false;
+      alertModule.updateConfig(desiredConfig, { silent: true });
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  let attempts = 0;
+  const retryId = window.setInterval(() => {
+    attempts += 1;
+    const applied = applyTiming();
+    if (applied || attempts >= 30) window.clearInterval(retryId);
+  }, 1000);
+
+  applyTiming();
+})();
+
 (function forceNormalAutoAttackRangeSix() {
   const storageKey = "minibiaBot.attack.config";
 
