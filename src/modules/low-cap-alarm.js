@@ -20,7 +20,6 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 
   let alarmStartedAt = 0;
   let lastBeepAt = 0;
-  let wasBelow = false;
   let audioContext = null;
 
   function saveConfig() {
@@ -55,9 +54,14 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     return audioContext;
   }
 
+  function unlockAudio() {
+    const ctx = getAudioContext();
+    if (ctx?.state === "suspended") ctx.resume?.().catch?.(() => {});
+  }
+
   function playChaChing() {
     const ctx = getAudioContext();
-    if (!ctx) return false;
+    if (!ctx || ctx.state === "suspended") return false;
     const now = ctx.currentTime;
 
     function tone(start, frequency, duration, gainValue) {
@@ -74,9 +78,9 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       oscillator.stop(now + start + duration + 0.02);
     }
 
-    tone(0.00, 1320, 0.16, 0.22);
-    tone(0.16, 1760, 0.18, 0.24);
-    tone(0.36, 988, 0.22, 0.18);
+    tone(0.00, 1320, 0.16, 0.28);
+    tone(0.16, 1760, 0.18, 0.30);
+    tone(0.36, 988, 0.24, 0.24);
     return true;
   }
 
@@ -90,13 +94,14 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     if (!status) return;
     const cap = getCap();
     const threshold = numberValue(config.threshold, 0);
+    const audioState = audioContext?.state || "new";
     if (!config.enabled) {
       status.textContent = "Status: off";
     } else if (cap == null) {
       status.textContent = `Status: watching, cap number not found, threshold ${threshold}`;
     } else if (alarmStartedAt) {
       const remaining = Math.max(0, Math.ceil((config.alertDurationMs - (Date.now() - alarmStartedAt)) / 1000));
-      status.textContent = `Status: LOW CAP ${cap} / ${threshold} (${remaining}s)`;
+      status.textContent = `Status: LOW CAP ${cap} / ${threshold} (${remaining}s, audio ${audioState})`;
     } else {
       status.textContent = `Status: cap ${cap} / threshold ${threshold}`;
     }
@@ -108,9 +113,6 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     const threshold = numberValue(config.threshold, 0);
     const below = cap != null && cap < threshold;
 
-    if (config.enabled && below && !wasBelow) startAlarm();
-    wasBelow = below;
-
     if (!config.enabled || !below) {
       alarmStartedAt = 0;
       lastBeepAt = 0;
@@ -118,13 +120,11 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       return;
     }
 
-    if (alarmStartedAt && now - alarmStartedAt <= config.alertDurationMs) {
-      if (!lastBeepAt || now - lastBeepAt >= config.beepIntervalMs) {
-        if (playChaChing()) lastBeepAt = now;
-      }
-    } else {
-      alarmStartedAt = 0;
-      lastBeepAt = 0;
+    if (!alarmStartedAt || now - alarmStartedAt > config.alertDurationMs) startAlarm();
+
+    if (!lastBeepAt || now - lastBeepAt >= config.beepIntervalMs) {
+      playChaChing();
+      lastBeepAt = now;
     }
 
     updateStatus();
@@ -155,12 +155,15 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     enabled.checked = !!config.enabled;
     threshold.value = String(numberValue(config.threshold, 50));
 
+    section.addEventListener("pointerdown", unlockAudio);
+    section.addEventListener("click", unlockAudio);
+
     enabled.addEventListener("change", () => {
+      unlockAudio();
       config.enabled = !!enabled.checked;
       if (!config.enabled) {
         alarmStartedAt = 0;
         lastBeepAt = 0;
-        wasBelow = false;
       }
       saveConfig();
       updateStatus();
