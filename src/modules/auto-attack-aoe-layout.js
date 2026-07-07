@@ -3,14 +3,13 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 (function installAutoAttackAoeLayoutFix() {
   const columnId = "minibia-bot-fourth-column";
   const styleId = "minibia-bot-fourth-column-style";
-  const collapsedStorageKey = "minibiaBot.ui.panelCollapsed";
 
   function installStyle() {
     if (document.getElementById(styleId)) return;
     const style = document.createElement("style");
     style.id = styleId;
     style.textContent = `
-      #minibia-bot-panel {
+      #minibia-bot-panel:not([data-collapsed="true"]) {
         width: min(98vw, 1440px) !important;
         max-width: calc(100vw - 12px) !important;
       }
@@ -21,7 +20,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       #minibia-bot-panel .mb-body[hidden] {
         display: none !important;
       }
-      #minibia-bot-panel[data-collapsed="false"] .mb-body:not([hidden]) {
+      #minibia-bot-panel:not([data-collapsed="true"]) .mb-body:not([hidden]) {
         display: grid !important;
         grid-template-columns: minmax(0, 1fr) 280px 240px 300px !important;
         gap: 10px !important;
@@ -51,63 +50,12 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     return panel?.querySelector?.(".mb-body") || null;
   }
 
-  function saveCollapsed(collapsed) {
-    try { window.localStorage.setItem(collapsedStorageKey, JSON.stringify(!!collapsed)); } catch (error) {}
-  }
-
-  function applyCollapsed(panel, collapsed) {
-    if (!panel) return;
-    const body = getPanelBody(panel);
-    const button = panel.querySelector?.("#minibia-bot-collapse");
-    const nextCollapsed = !!collapsed;
-    panel.dataset.collapsed = nextCollapsed ? "true" : "false";
-    panel.style.width = nextCollapsed ? "220px" : "min(98vw, 1440px)";
-    panel.style.maxWidth = "calc(100vw - 12px)";
-    if (body) {
-      body.hidden = nextCollapsed;
-      if (nextCollapsed) {
-        body.style.setProperty("display", "none", "important");
-      } else {
-        body.style.setProperty("display", "grid", "important");
-      }
-    }
-    if (button) {
-      button.textContent = nextCollapsed ? "+" : "−";
-      button.setAttribute("aria-label", nextCollapsed ? "Maximize panel" : "Minimize panel");
-      button.setAttribute("title", nextCollapsed ? "Maximize" : "Minimize");
-    }
-    saveCollapsed(nextCollapsed);
-  }
-
-  function ensureDefaultCollapsed(panel) {
-    if (!panel || panel.dataset.collapseDefaultApplied === "true") return;
-    panel.dataset.collapseDefaultApplied = "true";
-    applyCollapsed(panel, true);
-  }
-
-  function installCollapseClickHandler() {
-    if (document.__minibiaBotCollapseFixInstalled) return;
-    document.__minibiaBotCollapseFixInstalled = true;
-    document.addEventListener("click", (event) => {
-      const button = event.target?.closest?.("#minibia-bot-collapse");
-      if (!button) return;
-      const panel = getPanel();
-      if (!panel) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      applyCollapsed(panel, panel.dataset.collapsed !== "true");
-    }, true);
-  }
-
   function ensureFourthColumn() {
     const panel = getPanel();
     const body = getPanelBody(panel);
     if (!panel || !body) return null;
 
     installStyle();
-    installCollapseClickHandler();
-    ensureDefaultCollapsed(panel);
 
     let column = document.getElementById(columnId);
     if (!column) {
@@ -117,17 +65,12 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       body.appendChild(column);
     }
 
-    const isCollapsed = panel.dataset.collapsed === "true";
-    panel.style.maxWidth = "calc(100vw - 12px)";
-    panel.style.width = isCollapsed ? "220px" : "min(98vw, 1440px)";
-
-    if (isCollapsed) {
-      body.hidden = true;
-      body.style.setProperty("display", "none", "important");
+    if (panel.dataset.collapsed === "true" || body.hidden) {
       return column;
     }
 
-    body.hidden = false;
+    panel.style.maxWidth = "calc(100vw - 12px)";
+    panel.style.width = "min(98vw, 1440px)";
     body.style.setProperty("display", "grid", "important");
     body.style.setProperty("grid-template-columns", "minmax(0, 1fr) 280px 240px 300px", "important");
     body.style.setProperty("gap", "10px", "important");
@@ -153,7 +96,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     return true;
   }
 
-  function tick() {
+  function runLayoutPass() {
     try {
       moveAoeSectionToFourthColumn();
     } catch (error) {
@@ -161,20 +104,16 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     }
   }
 
-  tick();
-  window.setTimeout(tick, 0);
-  window.setTimeout(tick, 500);
-  window.setTimeout(tick, 1500);
-  window.setInterval(tick, 1000);
-
-  const observer = new MutationObserver(tick);
-  observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+  runLayoutPass();
+  window.setTimeout(runLayoutPass, 500);
+  window.setTimeout(runLayoutPass, 1500);
+  window.setTimeout(runLayoutPass, 3000);
 })();
 
 (function forceNormalAutoAttackRangeSix() {
   const storageKey = "minibiaBot.attack.config";
 
-  function persistSix() {
+  function applySix() {
     try {
       const rawValue = window.localStorage.getItem(storageKey);
       const config = rawValue ? JSON.parse(rawValue) : {};
@@ -182,12 +121,6 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
         config.maxTargetDistance = 6;
         window.localStorage.setItem(storageKey, JSON.stringify(config));
       }
-    } catch (error) {}
-  }
-
-  function applySix() {
-    try {
-      persistSix();
       const attackConfig = window.minibiaBot?.attack?.config;
       if (attackConfig && attackConfig.maxTargetDistance !== 6) {
         attackConfig.maxTargetDistance = 6;
@@ -196,8 +129,6 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
   }
 
   applySix();
-  window.setTimeout(applySix, 0);
   window.setTimeout(applySix, 500);
   window.setTimeout(applySix, 1500);
-  window.setInterval(applySix, 1000);
 })();
