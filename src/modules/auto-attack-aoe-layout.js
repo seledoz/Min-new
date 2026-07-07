@@ -88,7 +88,10 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
         const gfbOn = !!bot?.attackAoe?.config?.gfbEnabled;
         const slotSet = !!bot?.attackAoe?.config?.gfbHotbarSlot;
         if (gfbOn && slotSet) {
-          window.setTimeout(() => originalUseWith(item, target), 125);
+          const best = bot?.attackAoe?.getBestGfbCandidate?.();
+          const centeredMonster = best?.target || best?.monsters?.[0] || null;
+          const centeredTarget = centeredMonster ? { which: centeredMonster, index: 0xFF } : target;
+          window.setTimeout(() => originalUseWith(item, centeredTarget), 125);
           return true;
         }
         return originalUseWith(item, target);
