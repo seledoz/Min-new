@@ -213,7 +213,7 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
 
   function canCastEnergyWave(now = Date.now()) {
     const slot = normalizeHotbarSlot(config.energyWaveHotbarSlot);
-    if (!config.enabled || !state.running || !config.energyWaveEnabled || !slot || !isAutoAttackRunning()) return false;
+    if (!config.enabled || !state.running || !config.energyWaveEnabled || !slot) return false;
     if (now - state.lastEnergyWaveHotkeyAt < nonNegativeInt(config.energyWaveCooldownMs, 2000)) return false;
     const best = getBestEnergyWaveCandidate();
     return !!best && best.count >= positiveInt(config.energyWaveMinMonsters, 3);
@@ -344,9 +344,9 @@ window.__minibiaBotBundle.installAutoAttackAoeModule = function installAutoAttac
             <label class="mb-field"><span class="mb-field-label">Wave Min Creatures</span><input type="number" id="minibia-bot-energy-wave-monsters" min="1" placeholder="3" /></label>
             <label class="mb-field"><span class="mb-field-label">Wave Cooldown MS</span><input type="number" id="minibia-bot-energy-wave-cooldown" min="0" placeholder="2000" /></label>
           </div>
-          <div class="mb-small-note">Switches target if another monster gives a better wave. Uses the server pattern: 1 tile forward, then 3 / 3 / 3.</div>
+          <div class="mb-small-note">Works while manually hunting. Switches target if another monster gives a better wave, then uses the hotkey. Pattern: 1 tile forward, then 3 / 3 / 3.</div>
         </div>
-        <label class="mb-toggle"><input type="checkbox" id="minibia-bot-auto-attack-aoe-require-attack" /><span>Only while Auto Attack runs</span></label>
+        <label class="mb-toggle"><input type="checkbox" id="minibia-bot-auto-attack-aoe-require-attack" /><span>Only square AoE while Auto Attack runs</span></label>
         <label class="mb-toggle"><input type="checkbox" id="minibia-bot-auto-attack-aoe-respect-filters" /><span>Use target filters</span></label>
         <div class="mb-small-note" id="minibia-bot-auto-attack-aoe-status">AoE: idle</div>
       </div>`;
