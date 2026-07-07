@@ -13,7 +13,13 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
         width: min(98vw, 1440px) !important;
         max-width: calc(100vw - 12px) !important;
       }
-      #minibia-bot-panel .mb-body {
+      #minibia-bot-panel[data-collapsed="true"] {
+        width: 220px !important;
+      }
+      #minibia-bot-panel[data-collapsed="true"] .mb-body {
+        display: none !important;
+      }
+      #minibia-bot-panel:not([data-collapsed="true"]) .mb-body {
         display: grid !important;
         grid-template-columns: minmax(0, 1fr) 280px 240px 300px !important;
         gap: 10px !important;
@@ -58,8 +64,15 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       body.appendChild(column);
     }
 
-    panel.style.width = "min(98vw, 1440px)";
+    const isCollapsed = panel.dataset.collapsed === "true";
     panel.style.maxWidth = "calc(100vw - 12px)";
+    panel.style.width = isCollapsed ? "220px" : "min(98vw, 1440px)";
+
+    if (isCollapsed) {
+      body.style.setProperty("display", "none", "important");
+      return column;
+    }
+
     body.style.setProperty("display", "grid", "important");
     body.style.setProperty("grid-template-columns", "minmax(0, 1fr) 280px 240px 300px", "important");
     body.style.setProperty("gap", "10px", "important");
@@ -100,7 +113,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
   window.setInterval(tick, 1000);
 
   const observer = new MutationObserver(tick);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
 })();
 
 (function forceNormalAutoAttackRangeSix() {
