@@ -40,6 +40,20 @@
     });
   }
 
+  function removePanelDebugSection() {
+    const debugToggle = document.getElementById("minibia-bot-debug-enabled");
+    const debugSection = debugToggle?.closest?.(".mb-section");
+    if (debugSection) {
+      debugSection.remove();
+      return true;
+    }
+
+    const labels = Array.from(document.querySelectorAll("#minibia-bot-panel .mb-label"));
+    const debugLabel = labels.find((label) => String(label.textContent || "").trim().toLowerCase() === "debug");
+    debugLabel?.closest?.(".mb-section")?.remove();
+    return !!debugLabel;
+  }
+
   function boot(currentBundle = bundle) {
     const previousEnabledSnapshot = getPersistedEnabledSnapshot(window.minibiaBot);
     if (window.minibiaBot?.destroy) window.minibiaBot.destroy();
@@ -67,6 +81,8 @@
     currentBundle.installCaveWaypointActionsModule?.(bot);
 
     bot.ui.inject();
+    removePanelDebugSection();
+    window.setTimeout(removePanelDebugSection, 0);
     bot.caveArrowKeys?.ensureDropdownOption?.();
     document.getElementById("minibia-bot-waypoint-profiles-section")?.remove();
     bot.start = (...args) => bot.rune.start(...args);
