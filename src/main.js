@@ -7,7 +7,6 @@
     ["magicShield", "minibiaBot.magicShield.config"],
     ["attack", "minibiaBot.attack.config"],
     ["attackAoe", "minibiaBot.attackAoe.config"],
-    ["attackGfb", "minibiaBot.attackGfb.config"],
     ["attackExclude", "minibiaBot.attackExclude.config"],
     ["redTextAlert", "minibiaBot.redTextAlert.config"],
     ["cave", "minibiaBot.cave.config"],
@@ -71,7 +70,6 @@
     currentBundle.installAutoAttackModule(bot);
     currentBundle.installAutoAttackExcludeModule?.(bot);
     currentBundle.installAutoAttackAoeModule?.(bot);
-    currentBundle.installAutoAttackGfbModule?.(bot);
     currentBundle.installRedTextAlertModule?.(bot);
     currentBundle.installCaveModule(bot);
     currentBundle.installCaveForwardLoopModule?.(bot);
@@ -104,7 +102,6 @@
       attack: bot.attack.status(),
       attackExclude: bot.attackExclude?.status?.() || null,
       attackAoe: bot.attackAoe?.status?.() || null,
-      attackGfb: bot.attackGfb?.status?.() || null,
       redTextAlert: bot.redTextAlert?.status?.() || null,
       cave: bot.cave.status(),
       caveForwardLoop: bot.caveForwardLoop?.status?.() || null,
@@ -121,15 +118,13 @@
       branch: bot.version.branch,
       commit: bot.version.commit,
       buildDate: bot.version.date,
-      modules: ["pz", "xray", "panic", "rune", "heal", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "attackGfb", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "equipRing", "eat", "talk", "ui"],
+      modules: ["pz", "xray", "panic", "rune", "heal", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "equipRing", "eat", "talk", "ui"],
     });
     console.log("minibiaBot.reload()");
     console.log("minibiaBot.attackExclude.addName(\"monster name\")");
     console.log("minibiaBot.attackExclude.removeName(\"monster name\")");
     console.log("minibiaBot.attackAoe.start({ spellHotbarSlot: 5, minMonsters: 3, squareRange: 3 })");
-    console.log("minibiaBot.attackGfb.start({ hotbarSlot: 8, minMonsters: 4 })");
     console.log("minibiaBot.attackAoe.stop()");
-    console.log("minibiaBot.attackGfb.stop()");
     console.log("minibiaBot.redTextAlert.start()");
     console.log("minibiaBot.redTextAlert.stop()");
     console.log("minibiaBot.cave.start()");
