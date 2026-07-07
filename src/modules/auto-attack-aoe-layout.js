@@ -1,7 +1,6 @@
 window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 
-// Safe layout helper: no observers and no repeating layout loops.
-// It only runs a few delayed passes after the panel has loaded.
+// Safe layout helper: no observers. It retries briefly, then stops.
 (function moveAoeIntoFourthColumnSafely() {
   const columnId = "minibia-bot-aoe-column";
   const styleId = "minibia-bot-aoe-column-style";
@@ -12,24 +11,28 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     style.id = styleId;
     style.textContent = `
       #minibia-bot-panel {
-        width: min(98vw, 1260px);
+        width: min(98vw, 1260px) !important;
+        max-width: calc(100vw - 12px) !important;
+      }
+      #minibia-bot-panel[data-collapsed="true"] {
+        width: 220px !important;
       }
       #minibia-bot-panel .mb-body:not([hidden]) {
-        grid-template-columns: minmax(0, 1fr) 280px 240px 280px;
+        grid-template-columns: minmax(0, 1fr) 280px 240px 280px !important;
       }
       #minibia-bot-panel .mb-aoe-column {
-        display: grid;
-        gap: 10px;
-        align-content: start;
-        min-width: 0;
+        display: grid !important;
+        gap: 10px !important;
+        align-content: start !important;
+        min-width: 0 !important;
       }
       #minibia-bot-panel #minibia-bot-auto-attack-aoe-section {
-        max-height: none;
-        overflow: visible;
+        max-height: none !important;
+        overflow: visible !important;
       }
       @media (max-width: 760px) {
         #minibia-bot-panel .mb-body:not([hidden]) {
-          grid-template-columns: 1fr;
+          grid-template-columns: 1fr !important;
         }
       }
     `;
@@ -59,9 +62,16 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     return true;
   }
 
-  window.setTimeout(moveAoeSection, 1000);
-  window.setTimeout(moveAoeSection, 2500);
-  window.setTimeout(moveAoeSection, 5000);
+  let attempts = 0;
+  const retryId = window.setInterval(() => {
+    attempts += 1;
+    const moved = moveAoeSection();
+    if (moved || attempts >= 30) {
+      window.clearInterval(retryId);
+    }
+  }, 1000);
+
+  moveAoeSection();
 })();
 
 (function forceNormalAutoAttackRangeSix() {
