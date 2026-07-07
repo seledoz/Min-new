@@ -14,13 +14,14 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       beepIntervalMs: 3000,
       alertDurationMs: 30000,
       scanMs: 500,
+      voiceMessage: "Your cap is low",
     },
     JSON.parse(window.localStorage.getItem(storageKey) || "{}") || {}
   );
 
   let alarmStartedAt = 0;
   let lastBeepAt = 0;
-  let audioContext = null;
+  let speechUnlocked = false;
 
   function saveConfig() {
     try { window.localStorage.setItem(storageKey, JSON.stringify(config)); } catch (error) {}
@@ -46,42 +47,32 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     return null;
   }
 
-  function getAudioContext() {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return null;
-    if (!audioContext || audioContext.state === "closed") audioContext = new AudioContextClass();
-    if (audioContext.state === "suspended") audioContext.resume?.().catch?.(() => {});
-    return audioContext;
-  }
-
-  function unlockAudio() {
-    const ctx = getAudioContext();
-    if (ctx?.state === "suspended") ctx.resume?.().catch?.(() => {});
-  }
-
-  function playChaChing() {
-    const ctx = getAudioContext();
-    if (!ctx || ctx.state === "suspended") return false;
-    const now = ctx.currentTime;
-
-    function tone(start, frequency, duration, gainValue) {
-      const oscillator = ctx.createOscillator();
-      const gain = ctx.createGain();
-      oscillator.type = "triangle";
-      oscillator.frequency.setValueAtTime(frequency, now + start);
-      gain.gain.setValueAtTime(0.0001, now + start);
-      gain.gain.exponentialRampToValueAtTime(gainValue, now + start + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + start + duration);
-      oscillator.connect(gain);
-      gain.connect(ctx.destination);
-      oscillator.start(now + start);
-      oscillator.stop(now + start + duration + 0.02);
+  function unlockSpeech() {
+    try {
+      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return false;
+      speechUnlocked = true;
+      window.speechSynthesis.resume?.();
+      return true;
+    } catch (error) {
+      return false;
     }
+  }
 
-    tone(0.00, 1320, 0.16, 0.28);
-    tone(0.16, 1760, 0.18, 0.30);
-    tone(0.36, 988, 0.24, 0.24);
-    return true;
+  function speakLowCap() {
+    try {
+      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return false;
+      unlockSpeech();
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(config.voiceMessage || "Your cap is low");
+      utterance.volume = 1;
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      window.speechSynthesis.speak(utterance);
+      speechUnlocked = true;
+      return true;
+    } catch (error) {
+      return false;
+    }
   }
 
   function startAlarm() {
@@ -94,14 +85,13 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     if (!status) return;
     const cap = getCap();
     const threshold = numberValue(config.threshold, 0);
-    const audioState = audioContext?.state || "new";
     if (!config.enabled) {
       status.textContent = "Status: off";
     } else if (cap == null) {
       status.textContent = `Status: watching, cap number not found, threshold ${threshold}`;
     } else if (alarmStartedAt) {
       const remaining = Math.max(0, Math.ceil((config.alertDurationMs - (Date.now() - alarmStartedAt)) / 1000));
-      status.textContent = `Status: LOW CAP ${cap} / ${threshold} (${remaining}s, audio ${audioState})`;
+      status.textContent = `Status: LOW CAP ${cap} / ${threshold} (${remaining}s, voice ${speechUnlocked ? "ready" : "locked"})`;
     } else {
       status.textContent = `Status: cap ${cap} / threshold ${threshold}`;
     }
@@ -123,7 +113,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     if (!alarmStartedAt || now - alarmStartedAt > config.alertDurationMs) startAlarm();
 
     if (!lastBeepAt || now - lastBeepAt >= config.beepIntervalMs) {
-      playChaChing();
+      speakLowCap();
       lastBeepAt = now;
     }
 
@@ -155,15 +145,16 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     enabled.checked = !!config.enabled;
     threshold.value = String(numberValue(config.threshold, 50));
 
-    section.addEventListener("pointerdown", unlockAudio);
-    section.addEventListener("click", unlockAudio);
+    section.addEventListener("pointerdown", unlockSpeech);
+    section.addEventListener("click", unlockSpeech);
 
     enabled.addEventListener("change", () => {
-      unlockAudio();
+      unlockSpeech();
       config.enabled = !!enabled.checked;
       if (!config.enabled) {
         alarmStartedAt = 0;
         lastBeepAt = 0;
+        window.speechSynthesis?.cancel?.();
       }
       saveConfig();
       updateStatus();
