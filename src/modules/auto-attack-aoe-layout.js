@@ -177,6 +177,58 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
   applyTiming();
 })();
 
+(function makeSquareCooldownEditable() {
+  const inputId = "minibia-bot-auto-attack-aoe-cooldown";
+  let editing = false;
+  let draftValue = "";
+
+  function saveCooldown(value) {
+    const cooldownMs = Math.max(0, Math.trunc(Number(value)));
+    if (!Number.isFinite(cooldownMs)) return false;
+    try {
+      window.minibiaBot?.attackAoe?.updateConfig?.({ cooldownMs });
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function attach() {
+    const input = document.getElementById(inputId);
+    if (!input || input.dataset.squareCooldownEditableInstalled === "true") return false;
+    input.dataset.squareCooldownEditableInstalled = "true";
+    input.removeAttribute("readonly");
+    input.disabled = false;
+
+    input.addEventListener("focus", () => {
+      editing = true;
+      draftValue = input.value;
+    });
+    input.addEventListener("input", () => {
+      editing = true;
+      draftValue = input.value;
+      saveCooldown(draftValue);
+    });
+    input.addEventListener("change", () => {
+      draftValue = input.value;
+      saveCooldown(draftValue);
+    });
+    input.addEventListener("blur", () => {
+      saveCooldown(input.value);
+      editing = false;
+    });
+    return true;
+  }
+
+  window.setInterval(() => {
+    const input = document.getElementById(inputId);
+    attach();
+    if (editing && input && document.activeElement === input && input.value !== draftValue) {
+      input.value = draftValue;
+    }
+  }, 100);
+})();
+
 (function forceNormalAutoAttackRangeSix() {
   const storageKey = "minibiaBot.attack.config";
 
