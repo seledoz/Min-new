@@ -51,9 +51,15 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     }
   }
 
+  function removeReloadPanelSection() {
+    const reloadButton = document.getElementById("minibia-bot-reload");
+    reloadButton?.closest?.(".mb-actions")?.remove();
+  }
+
   function tick() {
     bindings.forEach(bind);
     keepFocusedDraftVisible();
+    removeReloadPanelSection();
   }
 
   tick();
