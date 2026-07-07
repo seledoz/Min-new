@@ -74,42 +74,89 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
   moveAoeSection();
 })();
 
-(function delayUseWithTargetForGfb() {
-  function installDelay() {
-    try {
-      const mouse = window.gameClient?.mouse;
-      if (!mouse || typeof mouse.__handleItemUseWith !== "function") return false;
-      if (mouse.__gfbUseWithDelayInstalled) return true;
+(function runGreatFireballWithoutSquareAoe() {
+  let lastShotAt = 0;
+  let shooting = false;
 
-      const originalUseWith = mouse.__handleItemUseWith.bind(mouse);
-      mouse.__gfbUseWithDelayInstalled = true;
-      mouse.__handleItemUseWith = function delayedUseWith(item, target) {
-        const bot = window.minibiaBot;
-        const gfbOn = !!bot?.attackAoe?.config?.gfbEnabled;
-        const slotSet = !!bot?.attackAoe?.config?.gfbHotbarSlot;
-        if (gfbOn && slotSet) {
-          const best = bot?.attackAoe?.getBestGfbCandidate?.();
-          const centeredMonster = best?.target || best?.monsters?.[0] || null;
-          const centeredTarget = centeredMonster ? { which: centeredMonster, index: 0xFF } : target;
-          window.setTimeout(() => originalUseWith(item, centeredTarget), 125);
-          return true;
-        }
-        return originalUseWith(item, target);
-      };
+  function numberValue(value, fallback) {
+    const n = Math.trunc(Number(value));
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  }
+
+  function clickCenteredMonster(best) {
+    const monster = best?.target || best?.monsters?.[0] || null;
+    if (!monster) return false;
+    const targetRef = { which: monster, index: 0xFF };
+    const mouse = window.gameClient?.mouse;
+    if (typeof mouse?.__handleItemUseWith === "function") {
+      try { mouse.__handleItemUseWith(null, targetRef); return true; } catch (error) {}
+    }
+    if (typeof mouse?.__handleThingUse === "function") {
+      try { mouse.__handleThingUse(targetRef); return true; } catch (error) {}
+    }
+    if (typeof mouse?.__handleCreatureClick === "function") {
+      try { mouse.__handleCreatureClick(monster); return true; } catch (error) {}
+    }
+    return false;
+  }
+
+  function setTarget(monster) {
+    try {
+      if (!monster || !window.gameClient?.player || typeof window.gameClient.send !== "function" || typeof TargetPacket !== "function") return false;
+      window.gameClient.player.setTarget(monster);
+      window.gameClient.send(new TargetPacket(monster.id));
       return true;
     } catch (error) {
       return false;
     }
   }
 
-  let attempts = 0;
-  const retryId = window.setInterval(() => {
-    attempts += 1;
-    const installed = installDelay();
-    if (installed || attempts >= 30) window.clearInterval(retryId);
-  }, 1000);
+  function tickGfbOnly() {
+    try {
+      const bot = window.minibiaBot;
+      const aoe = bot?.attackAoe;
+      const config = aoe?.config;
+      if (!bot || !aoe || !config?.gfbEnabled || shooting) return;
 
-  installDelay();
+      const slot = numberValue(config.gfbHotbarSlot, 0);
+      const minMonsters = numberValue(config.gfbMinMonsters, 4);
+      const cooldown = Math.max(500, numberValue(config.gfbCooldownMs, 2000));
+      const now = Date.now();
+      if (!slot || now - lastShotAt < cooldown) return;
+
+      const best = aoe.getBestGfbCandidate?.();
+      const monster = best?.target || best?.monsters?.[0] || null;
+      if (!best || !monster || best.count < minMonsters) return;
+
+      shooting = true;
+      setTarget(monster);
+      const pressed = bot.clickHotbar?.(slot - 1);
+      if (!pressed) {
+        shooting = false;
+        return;
+      }
+
+      window.setTimeout(() => {
+        const shot = clickCenteredMonster(best);
+        if (shot) {
+          lastShotAt = Date.now();
+          bot.log?.("used great fireball on monster center", {
+            slot,
+            monsterCount: best.count,
+            target: monster.name || "Mob",
+            position: best.position,
+          });
+        } else {
+          bot.log?.("great fireball monster center click failed", { target: monster.name || "Mob", position: best.position });
+        }
+        shooting = false;
+      }, 125);
+    } catch (error) {
+      shooting = false;
+    }
+  }
+
+  window.setInterval(tickGfbOnly, 250);
 })();
 
 (function forceNormalAutoAttackRangeSix() {
