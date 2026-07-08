@@ -31,6 +31,7 @@
     "src/modules/talk.js",
     "src/ui/panel.js",
     "src/main.js",
+    "src/modules/cave-chase-anti-stuck.js",
   ];
 
   function installUiCompatibilityShim() {
