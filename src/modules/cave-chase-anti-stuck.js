@@ -15,6 +15,9 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     targetId: null,
     lastPlayerPositionKey: null,
     stationarySince: 0,
+    idlePositionKey: null,
+    idleStationarySince: 0,
+    idleWaypointIndex: null,
     forceCombatClearUntil: 0,
   };
 
@@ -76,6 +79,14 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     state.stationarySince = now;
   }
 
+  function resetIdleTracking(position = getPlayerPosition(), caveStatus = bot.cave?.status?.(), now = Date.now()) {
+    state.idlePositionKey = getPositionKey(position);
+    state.idleStationarySince = now;
+    state.idleWaypointIndex = Number.isFinite(Number(caveStatus?.currentIndex))
+      ? Math.trunc(Number(caveStatus.currentIndex))
+      : null;
+  }
+
   function clearTargetAndFollow(target) {
     const player = window.gameClient?.player;
     const send = window.gameClient?.send;
@@ -108,7 +119,6 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     const currentIndex = Math.max(0, Math.min(routeLength - 1, Math.trunc(Number(caveStatus.currentIndex) || 0)));
     const direction = Number(caveStatus.direction) || 1;
 
-    // Respect the forward-loop helper when it is enabled: last waypoint wraps back to first.
     const forwardLoopEnabled = bot.caveForwardLoop?.status?.()?.config?.enabled !== false;
     if (forwardLoopEnabled && currentIndex >= routeLength - 1) {
       return 0;
@@ -145,7 +155,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     bot.log("cave chase anti-stuck advanced waypoint", {
       reason,
       targetId: target?.id,
-      targetName: target?.name || "Mob",
+      targetName: target?.name || null,
       previousIndex: previousIndex + 1,
       nextIndex: nextIndex + 1,
       routeLength,
@@ -179,14 +189,52 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     bot.attack.__caveChaseAntiStuckStatusPatched = true;
   }
 
+  function checkIdleStuck(now = Date.now()) {
+    const caveStatus = bot.cave?.status?.();
+    const playerPosition = getPlayerPosition();
+    if (!caveStatus?.running || !playerPosition) {
+      resetIdleTracking(playerPosition, caveStatus, now);
+      return false;
+    }
+
+    const playerPositionKey = getPositionKey(playerPosition);
+    const currentWaypointIndex = Number.isFinite(Number(caveStatus.currentIndex))
+      ? Math.trunc(Number(caveStatus.currentIndex))
+      : null;
+
+    if (state.idlePositionKey !== playerPositionKey || state.idleWaypointIndex !== currentWaypointIndex) {
+      resetIdleTracking(playerPosition, caveStatus, now);
+      return false;
+    }
+
+    const stuckForMs = now - (state.idleStationarySince || now);
+    if (stuckForMs < STUCK_MS) {
+      return false;
+    }
+
+    const advanced = advanceCaveWaypoint("no target and player tile did not change", null, stuckForMs);
+    if (advanced) {
+      bot.log("cave chase anti-stuck idle advance", {
+        playerPosition,
+        stuckForMs,
+        currentWaypointIndex: currentWaypointIndex == null ? null : currentWaypointIndex + 1,
+      });
+    }
+
+    resetIdleTracking(playerPosition, bot.cave?.status?.(), now);
+    return advanced;
+  }
+
   function checkChaseStuck(now = Date.now()) {
     patchAttackStatus();
 
     const target = getCurrentTarget() || getCurrentFollowTarget();
     if (!target?.id) {
       resetTracking(null, now);
-      return false;
+      return checkIdleStuck(now);
     }
+
+    resetIdleTracking(getPlayerPosition(), bot.cave?.status?.(), now);
 
     const playerPosition = getPlayerPosition();
     const targetPosition = getTargetPosition(target);
@@ -256,6 +304,8 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       running: state.timerId != null,
       targetId: state.targetId,
       stationaryForMs: state.stationarySince ? Math.max(0, Date.now() - state.stationarySince) : 0,
+      idleStationaryForMs: state.idleStationarySince ? Math.max(0, Date.now() - state.idleStationarySince) : 0,
+      idleWaypointIndex: state.idleWaypointIndex,
       forceCombatClearUntil: state.forceCombatClearUntil,
       config: {
         stuckMs: STUCK_MS,
@@ -273,6 +323,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     stop,
     status,
     checkChaseStuck,
+    checkIdleStuck,
     destroy,
   };
 
