@@ -29,6 +29,7 @@ cat \
   src/modules/auto-attack-aoe.js \
   src/modules/auto-attack-gfb.js \
   src/modules/auto-attack-aoe-layout.js \
+  src/modules/lure-mode.js \
   src/modules/red-text-alert.js \
   src/modules/cave.js \
   src/modules/cave-forward-loop.js \
