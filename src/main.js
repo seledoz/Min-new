@@ -8,6 +8,7 @@
     ["magicShield", "minibiaBot.magicShield.config"],
     ["attack", "minibiaBot.attack.config"],
     ["attackAoe", "minibiaBot.attackAoe.config"],
+    ["lureMode", "minibiaBot.lure.config"],
     ["attackExclude", "minibiaBot.attackExclude.config"],
     ["redTextAlert", "minibiaBot.redTextAlert.config"],
     ["cave", "minibiaBot.cave.config"],
@@ -86,6 +87,7 @@
     currentBundle.installCaveWaypointActionsModule?.(bot);
 
     bot.ui.inject();
+    currentBundle.installLureModeModule?.(bot);
     currentBundle.installGithubWaypointLibraryModule?.(bot);
     removePanelDebugSection();
     window.setTimeout(removePanelDebugSection, 0);
@@ -109,6 +111,7 @@
       attack: bot.attack.status(),
       attackExclude: bot.attackExclude?.status?.() || null,
       attackAoe: bot.attackAoe?.status?.() || null,
+      lureMode: bot.lureMode?.status?.() || null,
       redTextAlert: bot.redTextAlert?.status?.() || null,
       cave: bot.cave.status(),
       caveForwardLoop: bot.caveForwardLoop?.status?.() || null,
@@ -127,13 +130,14 @@
       branch: bot.version.branch,
       commit: bot.version.commit,
       buildDate: bot.version.date,
-      modules: ["pz", "xray", "panic", "rune", "heal", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "ui"],
+      modules: ["pz", "xray", "panic", "rune", "heal", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "lureMode", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "ui"],
     });
     console.log("minibiaBot.reload()");
     console.log("minibiaBot.attackExclude.addName(\"monster name\")");
     console.log("minibiaBot.attackExclude.removeName(\"monster name\")");
     console.log("minibiaBot.attackAoe.start({ spellHotbarSlot: 5, minMonsters: 3, squareRange: 3 })");
     console.log("minibiaBot.attackAoe.stop()");
+    console.log("minibiaBot.lureMode.updateConfig({ enabled: true, minMonsters: 3, maxDistance: 4 })");
     console.log("minibiaBot.redTextAlert.start()");
     console.log("minibiaBot.redTextAlert.stop()");
     console.log("minibiaBot.cave.start()");
