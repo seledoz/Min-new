@@ -38,14 +38,10 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
     const label = document.getElementById("minibia-bot-github-waypoints-connection");
     const setup = document.getElementById("minibia-bot-github-waypoints-setup");
     const input = document.getElementById("minibia-bot-github-waypoints-token");
-    const toggle = document.getElementById("minibia-bot-github-waypoints-connect");
-    const clear = document.getElementById("minibia-bot-github-waypoints-clear-token");
 
     if (label) label.textContent = connected ? "GitHub: connected for saving" : "GitHub: setup needed for saving";
     if (setup) setup.hidden = connected;
     if (input && connected) input.value = "";
-    if (toggle) toggle.textContent = connected ? "Change GitHub Setup" : "Connect GitHub";
-    if (clear) clear.disabled = !connected;
   }
 
   function normalizePosition(value) {
@@ -178,7 +174,7 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
 
   async function fetchFileForWrite(path) {
     const value = getToken();
-    if (!value) throw new Error("Click Connect GitHub first");
+    if (!value) throw new Error("Save GitHub Setup first");
 
     const response = await fetch(`${apiBaseUrl}/${encodePath(path)}?ref=${encodeURIComponent(branch)}`, {
       headers: getHeaders(value),
@@ -193,7 +189,7 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
 
   async function writeScriptFile(path, script, sha) {
     const value = getToken();
-    if (!value) throw new Error("Click Connect GitHub first");
+    if (!value) throw new Error("Save GitHub Setup first");
 
     const content = JSON.stringify(normalizeScript(script, script.name), null, 2) + "\n";
     const body = {
@@ -320,10 +316,6 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
           <input type="password" id="minibia-bot-github-waypoints-token" placeholder="GitHub token" />
           <button type="button" class="mb-small-button" id="minibia-bot-github-waypoints-save-token">Save GitHub Setup</button>
         </div>
-        <div class="mb-actions mb-actions-inline-two">
-          <button type="button" class="mb-small-button" id="minibia-bot-github-waypoints-connect">Connect GitHub</button>
-          <button type="button" class="mb-small-button" id="minibia-bot-github-waypoints-clear-token">Clear Setup</button>
-        </div>
         <input type="text" id="minibia-bot-github-waypoints-name" placeholder="Script name" />
         <select id="minibia-bot-github-waypoints-select"></select>
         <div class="mb-actions mb-actions-inline-two">
@@ -340,32 +332,16 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
     const setup = section.querySelector("#minibia-bot-github-waypoints-setup");
     const tokenInput = section.querySelector("#minibia-bot-github-waypoints-token");
     const saveTokenButton = section.querySelector("#minibia-bot-github-waypoints-save-token");
-    const connectButton = section.querySelector("#minibia-bot-github-waypoints-connect");
-    const clearButton = section.querySelector("#minibia-bot-github-waypoints-clear-token");
     const nameInput = section.querySelector("#minibia-bot-github-waypoints-name");
     const select = section.querySelector("#minibia-bot-github-waypoints-select");
     const saveButton = section.querySelector("#minibia-bot-github-waypoints-save");
     const loadButton = section.querySelector("#minibia-bot-github-waypoints-load");
     const refreshButton = section.querySelector("#minibia-bot-github-waypoints-refresh");
 
-    if (connectButton) {
-      connectButton.addEventListener("click", () => {
-        if (setup) setup.hidden = false;
-        if (tokenInput) tokenInput.focus();
-      });
-    }
-
     if (saveTokenButton) {
       saveTokenButton.addEventListener("click", () => {
         setToken(tokenInput?.value || "");
-        setStatus(hasToken() ? "GitHub: connected for saving" : "GitHub: setup cleared");
-      });
-    }
-
-    if (clearButton) {
-      clearButton.addEventListener("click", () => {
-        setToken("");
-        setStatus("GitHub: setup cleared");
+        setStatus(hasToken() ? "GitHub: connected for saving" : "GitHub: setup needed for saving");
       });
     }
 
@@ -382,7 +358,7 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
         try {
           if (!hasToken()) {
             if (setup) setup.hidden = false;
-            throw new Error("Click Connect GitHub first");
+            throw new Error("Save GitHub Setup first");
           }
           saveButton.disabled = true;
           setStatus("GitHub: saving current script...");
