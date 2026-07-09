@@ -20,6 +20,7 @@
     "src/modules/auto-attack-aoe.js",
     "src/modules/auto-attack-gfb.js",
     "src/modules/auto-attack-aoe-layout.js",
+    "src/modules/lure-mode.js",
     "src/modules/aoe-cooldown-input-fix.js",
     "src/modules/low-cap-alarm.js",
     "src/modules/mining.js",
