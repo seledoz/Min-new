@@ -30,6 +30,7 @@
     "src/modules/auto-eat.js",
     "src/modules/talk.js",
     "src/ui/panel.js",
+    "src/modules/github-waypoint-library.js",
     "src/main.js",
     "src/modules/cave-chase-anti-stuck.js",
   ];
@@ -91,7 +92,6 @@
       blankPanelTitle();
       removePanelDebugSection();
       removePanicRunnerSection();
-      document.getElementById("minibia-bot-waypoint-profiles-section")?.remove();
       attempts += 1;
       if (attempts >= 20) window.clearInterval(timerId);
     }, 250);
@@ -122,9 +122,11 @@
     }
 
     keepPanelTitleBlank();
+    console.log("[minibia-bot] source bundle loaded");
   }
 
   loadBot().catch((error) => {
     console.error("[minibia-bot] failed to load source bundle", error);
+    alert(`Minibia bot failed to load: ${error.message || error}`);
   });
 })();
