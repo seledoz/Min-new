@@ -56,114 +56,6 @@
     return !!debugLabel;
   }
 
-  function normalizePosition(value) {
-    if (!value) return null;
-    const x = Number(value.x);
-    const y = Number(value.y);
-    const z = Number(value.z);
-    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
-    return { x: Math.trunc(x), y: Math.trunc(y), z: Math.trunc(z) };
-  }
-
-  function getTileDistance(from, to) {
-    if (!from || !to || Number(from.z) !== Number(to.z)) return Number.POSITIVE_INFINITY;
-    return Math.max(Math.abs(Number(from.x) - Number(to.x)), Math.abs(Number(from.y) - Number(to.y)));
-  }
-
-  function clearCreatureTarget(target) {
-    const player = window.gameClient?.player;
-    if (!target?.id || !player || typeof window.gameClient?.send !== "function") return false;
-
-    let cleared = false;
-    if (player.__target?.id === target.id && typeof TargetPacket === "function") {
-      player.setTarget(null);
-      window.gameClient.send(new TargetPacket(0));
-      cleared = true;
-    }
-
-    if (player.__followTarget?.id === target.id && typeof FollowPacket === "function") {
-      player.setFollowTarget(null);
-      window.gameClient.send(new FollowPacket(0));
-      cleared = true;
-    }
-
-    return cleared;
-  }
-
-  function getNextCaveIndex(caveStatus) {
-    const routeLength = Array.isArray(caveStatus?.route) ? caveStatus.route.length : 0;
-    if (routeLength <= 1) return caveStatus?.currentIndex || 0;
-
-    let direction = Number(caveStatus?.direction) || 1;
-    let nextIndex = (Number(caveStatus?.currentIndex) || 0) + direction;
-
-    if (nextIndex >= routeLength) {
-      nextIndex = routeLength - 2;
-    } else if (nextIndex < 0) {
-      nextIndex = 1;
-    }
-
-    return Math.max(0, Math.min(routeLength - 1, nextIndex));
-  }
-
-  function installCaveCombatAntiStuckGuard(bot) {
-    const ignoredTargetIds = new Map();
-    let lastHandledTargetId = null;
-    let lastHandledAt = 0;
-
-    const timerId = window.setInterval(() => {
-      try {
-        const now = Date.now();
-        for (const [id, expiresAt] of ignoredTargetIds.entries()) {
-          if (expiresAt <= now) ignoredTargetIds.delete(id);
-        }
-
-        const caveStatus = bot.cave?.status?.();
-        const attackStatus = bot.attack?.status?.();
-        const currentTarget = bot.attack?.getCurrentTarget?.();
-        const currentTargetId = currentTarget?.id || attackStatus?.currentTarget?.id || null;
-        if (currentTargetId && ignoredTargetIds.has(currentTargetId)) {
-          clearCreatureTarget(currentTarget || attackStatus.currentTarget);
-          return;
-        }
-
-        if (!caveStatus?.running || !caveStatus.pausedForCombat || !attackStatus?.combatActive) return;
-        const stuckForMs = now - Number(caveStatus.lastProgressAt || now);
-        if (stuckForMs < 3000) return;
-
-        const playerPosition = normalizePosition(bot.getPlayerPosition?.());
-        const targetPosition = normalizePosition(currentTarget?.getPosition?.() || currentTarget?.__position || attackStatus.currentTarget?.position);
-        if (!playerPosition || !targetPosition || playerPosition.z !== targetPosition.z) return;
-
-        const distance = getTileDistance(playerPosition, targetPosition);
-        if (distance <= 1) return;
-
-        const targetId = currentTargetId;
-        if (!targetId) return;
-        if (targetId === lastHandledTargetId && now - lastHandledAt < 4000) return;
-
-        ignoredTargetIds.set(targetId, now + 10000);
-        clearCreatureTarget(currentTarget || attackStatus.currentTarget);
-        bot.cave?.setCurrentIndex?.(getNextCaveIndex(caveStatus));
-        lastHandledTargetId = targetId;
-        lastHandledAt = now;
-
-        bot.log("cave combat anti-stuck skipped target and advanced waypoint", {
-          targetId,
-          targetName: currentTarget?.name || attackStatus.currentTarget?.name || "Mob",
-          distance,
-          stuckForMs,
-          ignoredForMs: 10000,
-          nextIndex: getNextCaveIndex(caveStatus) + 1,
-        });
-      } catch (error) {
-        bot.log?.("cave combat anti-stuck guard failed", error?.message || error);
-      }
-    }, 250);
-
-    bot.addCleanup?.(() => window.clearInterval(timerId));
-  }
-
   function boot(currentBundle = bundle) {
     const previousEnabledSnapshot = getPersistedEnabledSnapshot(window.minibiaBot);
     if (window.minibiaBot?.destroy) window.minibiaBot.destroy();
@@ -184,7 +76,6 @@
     currentBundle.installAutoAttackAoeModule?.(bot);
     currentBundle.installRedTextAlertModule?.(bot);
     currentBundle.installCaveModule(bot);
-    installCaveCombatAntiStuckGuard(bot);
     currentBundle.installCaveForwardLoopModule?.(bot);
     currentBundle.installCaveArrowKeysModule?.(bot);
     currentBundle.installEquipRingModule(bot);
