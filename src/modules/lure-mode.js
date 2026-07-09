@@ -6,7 +6,17 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
   const TICK_MS = 150;
 
   const config = Object.assign({ enabled: false, minMonsters: 3, maxDistance: 4 }, bot.storage.get(configStorageKey, {}) || {});
-  const state = { timerId: null, uiTimerId: null, pathfinder: null, originalFindPath: null, suppressingAttack: false, restoreAttackEnabled: false, lastHoldLogAt: 0, lastStatus: null };
+  const state = {
+    timerId: null,
+    uiTimerId: null,
+    pathfinder: null,
+    originalFindPath: null,
+    suppressingAttack: false,
+    restoreAttackEnabled: false,
+    lastHoldLogAt: 0,
+    lastStatus: null,
+    clearingPack: false,
+  };
 
   function persistConfig() { bot.storage.set(configStorageKey, { ...config }); }
   function intValue(value, fallback, min = 1, max = 99) { const n = Math.trunc(Number(value)); return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback; }
@@ -35,8 +45,22 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     const combatActive = !!bot.attack?.status?.()?.combatActive;
     const closestDistance = monsters.length ? monsters[0].distance : Infinity;
     const readyToEngage = !!config.enabled && monsters.length >= minMonsters;
-    const luring = !!config.enabled && monsters.length > 0 && !readyToEngage && !hasTarget && !combatActive;
-    return { enabled: !!config.enabled, countRange: COUNT_RANGE, minMonsters, maxDistance, monsterCount: monsters.length, closestDistance: Number.isFinite(closestDistance) ? closestDistance : null, readyToEngage, luring, shouldHoldWalking: luring && closestDistance > maxDistance, hasTarget, combatActive };
+    const clearingPack = !!config.enabled && state.clearingPack;
+    const luring = !!config.enabled && monsters.length > 0 && !readyToEngage && !clearingPack && !hasTarget && !combatActive;
+    return {
+      enabled: !!config.enabled,
+      countRange: COUNT_RANGE,
+      minMonsters,
+      maxDistance,
+      monsterCount: monsters.length,
+      closestDistance: Number.isFinite(closestDistance) ? closestDistance : null,
+      readyToEngage,
+      clearingPack,
+      luring,
+      shouldHoldWalking: (luring && closestDistance > maxDistance) || (clearingPack && (monsters.length > 0 || hasTarget || combatActive)),
+      hasTarget,
+      combatActive,
+    };
   }
 
   function setAttackSuppressed(shouldSuppress) {
@@ -77,7 +101,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
       if (status.shouldHoldWalking) {
         const now = Date.now();
         stopCurrentPath();
-        if (now - state.lastHoldLogAt > 1500) { state.lastHoldLogAt = now; bot.log?.("lure mode holding path until monster catches up", { monsterCount: status.monsterCount, closestDistance: status.closestDistance, maxDistance: status.maxDistance, countRange: COUNT_RANGE }); }
+        if (now - state.lastHoldLogAt > 1500) { state.lastHoldLogAt = now; bot.log?.("lure mode holding path", { monsterCount: status.monsterCount, closestDistance: status.closestDistance, maxDistance: status.maxDistance, countRange: COUNT_RANGE, clearingPack: status.clearingPack }); }
         return null;
       }
       return state.originalFindPath(...args);
@@ -91,6 +115,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     const label = document.getElementById("minibia-bot-lure-status");
     if (!label) return;
     if (!status.enabled) label.textContent = "Lure: off";
+    else if (status.clearingPack) label.textContent = `Lure: clearing ${status.monsterCount} left`;
     else if (status.readyToEngage) label.textContent = `Lure: engaging ${status.monsterCount}/${status.minMonsters}`;
     else if (status.shouldHoldWalking) label.textContent = `Lure: waiting, closest ${status.closestDistance}/${status.maxDistance}`;
     else if (status.monsterCount > 0) label.textContent = `Lure: walking ${status.monsterCount}/${status.minMonsters}`;
@@ -99,10 +124,46 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
 
   function tick() {
     patchPathfinder();
-    const status = getLureStatus();
+    let status = getLureStatus();
     state.lastStatus = status;
-    if (!status.enabled || status.hasTarget || status.combatActive) { setAttackSuppressed(false); updateStatusUi(status); return status; }
-    if (status.readyToEngage) { setAttackSuppressed(false); bot.attack?.triggerAttack?.(); bot.log?.("lure mode engaging monsters", { monsterCount: status.monsterCount, minMonsters: status.minMonsters, countRange: COUNT_RANGE }); updateStatusUi(status); return status; }
+
+    if (!status.enabled) {
+      state.clearingPack = false;
+      setAttackSuppressed(false);
+      updateStatusUi(status);
+      return status;
+    }
+
+    if (state.clearingPack && !status.hasTarget && !status.combatActive && status.monsterCount === 0) {
+      state.clearingPack = false;
+      status = getLureStatus();
+      bot.log?.("lure mode pack cleared");
+    }
+
+    if (state.clearingPack) {
+      setAttackSuppressed(false);
+      if (!status.hasTarget && status.monsterCount > 0) bot.attack?.triggerAttack?.();
+      stopCurrentPath();
+      updateStatusUi(getLureStatus());
+      return getLureStatus();
+    }
+
+    if (status.readyToEngage) {
+      state.clearingPack = true;
+      setAttackSuppressed(false);
+      bot.attack?.triggerAttack?.();
+      stopCurrentPath();
+      bot.log?.("lure mode engaging pack", { monsterCount: status.monsterCount, minMonsters: status.minMonsters, countRange: COUNT_RANGE });
+      updateStatusUi(getLureStatus());
+      return getLureStatus();
+    }
+
+    if (status.hasTarget || status.combatActive) {
+      setAttackSuppressed(false);
+      updateStatusUi(status);
+      return status;
+    }
+
     setAttackSuppressed(true);
     if (status.shouldHoldWalking) stopCurrentPath();
     updateStatusUi(status);
@@ -114,7 +175,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     if (Object.prototype.hasOwnProperty.call(nextConfig, "minMonsters")) config.minMonsters = intValue(nextConfig.minMonsters, config.minMonsters || 3, 1, 20);
     if (Object.prototype.hasOwnProperty.call(nextConfig, "maxDistance")) config.maxDistance = intValue(nextConfig.maxDistance, config.maxDistance || 4, 1, COUNT_RANGE);
     persistConfig();
-    if (!config.enabled) setAttackSuppressed(false);
+    if (!config.enabled) { state.clearingPack = false; setAttackSuppressed(false); }
     bot.log?.("lure mode config updated", { ...config, countRange: COUNT_RANGE });
     updateUiValues();
     updateStatusUi();
@@ -155,7 +216,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
           <label class="mb-field" for="minibia-bot-lure-min-monsters"><span class="mb-field-label">Min Monsters</span><input type="number" id="minibia-bot-lure-min-monsters" min="1" max="20" step="1" /></label>
           <label class="mb-field" for="minibia-bot-lure-max-distance"><span class="mb-field-label">Max Distance</span><input type="number" id="minibia-bot-lure-max-distance" min="1" max="7" step="1" /></label>
         </div>
-        <div class="mb-small-note">Counts monsters within 7 sqm. Holds walking until closest lured monster is within Max Distance.</div>
+        <div class="mb-small-note">After Min Monsters is reached, it stays in kill mode until the pack is cleared.</div>
         <div class="mb-small-note" id="minibia-bot-lure-status">Lure: off</div>
       </div>
     `;
@@ -213,8 +274,8 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
   }
 
   function start() { if (state.timerId != null) return false; patchPathfinder(); state.timerId = window.setInterval(() => { try { tick(); } catch (error) { bot.log?.("lure mode tick failed", error?.message || error); } }, TICK_MS); return true; }
-  function stop() { if (state.timerId != null) window.clearInterval(state.timerId); if (state.uiTimerId != null) window.clearInterval(state.uiTimerId); state.timerId = null; state.uiTimerId = null; setAttackSuppressed(false); restorePathfinder(); return true; }
-  function status() { return { running: state.timerId != null, config: { ...config, countRange: COUNT_RANGE }, lure: getLureStatus(), suppressingAttack: state.suppressingAttack }; }
+  function stop() { if (state.timerId != null) window.clearInterval(state.timerId); if (state.uiTimerId != null) window.clearInterval(state.uiTimerId); state.timerId = null; state.uiTimerId = null; state.clearingPack = false; setAttackSuppressed(false); restorePathfinder(); return true; }
+  function status() { return { running: state.timerId != null, config: { ...config, countRange: COUNT_RANGE }, lure: getLureStatus(), clearingPack: state.clearingPack, suppressingAttack: state.suppressingAttack }; }
 
   bot.lureMode = { start, stop, status, updateConfig, getLureStatus, config };
   start();
