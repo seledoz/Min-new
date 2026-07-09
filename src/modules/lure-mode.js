@@ -25,7 +25,9 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
   function pos(value) {
     if (!value) return null;
     const x = Number(value.x), y = Number(value.y), z = Number(value.z);
-    return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) ? { x: Math.trunc(x), y: Math.trunc(y), z: Math.trunc(z) } : null;
+    return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)
+      ? { x: Math.trunc(x), y: Math.trunc(y), z: Math.trunc(z) }
+      : null;
   }
   function dist(a, b) {
     if (!a || !b || Number(a.z) !== Number(b.z)) return Infinity;
@@ -55,19 +57,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     const closestDistance = monsters.length ? monsters[0].distance : Infinity;
     const readyToEngage = !!config.enabled && monsters.length >= minMonsters;
     const luring = !!config.enabled && monsters.length > 0 && !readyToEngage && !hasTarget && !combatActive;
-    return {
-      enabled: !!config.enabled,
-      countRange: COUNT_RANGE,
-      minMonsters,
-      maxDistance,
-      monsterCount: monsters.length,
-      closestDistance: Number.isFinite(closestDistance) ? closestDistance : null,
-      readyToEngage,
-      luring,
-      shouldHoldWalking: luring && closestDistance > maxDistance,
-      hasTarget,
-      combatActive,
-    };
+    return { enabled: !!config.enabled, countRange: COUNT_RANGE, minMonsters, maxDistance, monsterCount: monsters.length, closestDistance: Number.isFinite(closestDistance) ? closestDistance : null, readyToEngage, luring, shouldHoldWalking: luring && closestDistance > maxDistance, hasTarget, combatActive };
   }
 
   function setAttackSuppressed(shouldSuppress) {
@@ -118,12 +108,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
         stopCurrentPath();
         if (now - state.lastHoldLogAt > 1500) {
           state.lastHoldLogAt = now;
-          bot.log?.("lure mode holding path until monster catches up", {
-            monsterCount: status.monsterCount,
-            closestDistance: status.closestDistance,
-            maxDistance: status.maxDistance,
-            countRange: COUNT_RANGE,
-          });
+          bot.log?.("lure mode holding path until monster catches up", { monsterCount: status.monsterCount, closestDistance: status.closestDistance, maxDistance: status.maxDistance, countRange: COUNT_RANGE });
         }
         return null;
       }
@@ -228,18 +213,23 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     return section;
   }
 
+  function findGreatFireballSection() {
+    const byId = document.getElementById("minibia-bot-gfb-section");
+    if (byId?.parentElement) return byId;
+
+    const labels = Array.from(document.querySelectorAll("#minibia-bot-panel .mb-label, #k9x-panel .mb-label"));
+    const label = labels.find((node) => /great\s*fireball/i.test(String(node.textContent || "")));
+    return label?.closest?.(".mb-section") || null;
+  }
+
   function cleanupDuplicateLurePanels() {
     document.querySelectorAll("#minibia-bot-lure-standalone").forEach((node) => node.remove());
-    const allSections = Array.from(document.querySelectorAll("#minibia-bot-lure-section"));
-    if (allSections.length <= 1) return allSections[0] || null;
+    const sections = Array.from(document.querySelectorAll("#minibia-bot-lure-section"));
+    if (sections.length <= 1) return sections[0] || null;
 
-    const gfbSection = document.getElementById("minibia-bot-gfb-section");
-    const preferred = gfbSection?.nextElementSibling?.id === "minibia-bot-lure-section"
-      ? gfbSection.nextElementSibling
-      : allSections[0];
-    allSections.forEach((node) => {
-      if (node !== preferred) node.remove();
-    });
+    const gfb = findGreatFireballSection();
+    const preferred = gfb?.nextElementSibling?.id === "minibia-bot-lure-section" ? gfb.nextElementSibling : sections[0];
+    sections.forEach((node) => { if (node !== preferred) node.remove(); });
     return preferred;
   }
 
@@ -255,10 +245,10 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
   }
 
   function moveSectionBelowGfb(section) {
-    const gfbSection = document.getElementById("minibia-bot-gfb-section");
-    if (!gfbSection?.parentElement) return false;
-    if (section.parentElement !== gfbSection.parentElement || section.previousElementSibling !== gfbSection) {
-      gfbSection.insertAdjacentElement("afterend", section);
+    const gfb = findGreatFireballSection();
+    if (!gfb?.parentElement) return false;
+    if (section.parentElement !== gfb.parentElement || section.previousElementSibling !== gfb) {
+      gfb.insertAdjacentElement("afterend", section);
     }
     return true;
   }
@@ -268,11 +258,12 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     cleanupDuplicateLurePanels();
     const section = getOrCreateLureSection();
     const movedUnderGfb = moveSectionBelowGfb(section);
+
     if (!movedUnderGfb && !section.parentElement) {
-      const panel = document.getElementById("minibia-bot-panel") || document.getElementById("k9x-panel");
-      const fallbackColumn = document.getElementById("minibia-bot-aoe-column") || panel?.querySelector?.(".mb-cave-column") || panel?.querySelector?.(".mb-main-column") || panel?.querySelector?.(".mb-body");
-      if (fallbackColumn) fallbackColumn.appendChild(section);
+      const aoeColumn = document.getElementById("minibia-bot-aoe-column");
+      if (aoeColumn) aoeColumn.appendChild(section);
     }
+
     cleanupDuplicateLurePanels();
     updateUiValues();
     updateStatusUi();
@@ -285,9 +276,9 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
       attempts += 1;
       injectUi();
       const section = document.getElementById("minibia-bot-lure-section");
-      const gfbSection = document.getElementById("minibia-bot-gfb-section");
-      const correctlyPlaced = !!section && !!gfbSection && section.previousElementSibling === gfbSection && section.parentElement === gfbSection.parentElement;
-      if (correctlyPlaced || attempts >= 160) {
+      const gfb = findGreatFireballSection();
+      const correctlyPlaced = !!section && !!gfb && section.previousElementSibling === gfb && section.parentElement === gfb.parentElement;
+      if (correctlyPlaced || attempts >= 240) {
         window.clearInterval(state.uiTimerId);
         state.uiTimerId = null;
       }
