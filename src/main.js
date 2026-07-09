@@ -195,6 +195,7 @@
     currentBundle.installCaveWaypointActionsModule?.(bot);
 
     bot.ui.inject();
+    currentBundle.installGithubWaypointLibraryModule?.(bot);
     removePanelDebugSection();
     window.setTimeout(removePanelDebugSection, 0);
     bot.caveArrowKeys?.ensureDropdownOption?.();
@@ -221,6 +222,7 @@
       cave: bot.cave.status(),
       caveForwardLoop: bot.caveForwardLoop?.status?.() || null,
       caveArrowKeys: bot.caveArrowKeys?.status?.() || null,
+      githubWaypointLibrary: bot.githubWaypointLibrary ? { path: bot.githubWaypointLibrary.path } : null,
       equipRing: bot.equipRing.status(),
       mining: bot.mining?.status?.() || null,
       eat: bot.eat.status(),
@@ -234,7 +236,7 @@
       branch: bot.version.branch,
       commit: bot.version.commit,
       buildDate: bot.version.date,
-      modules: ["pz", "xray", "panic", "rune", "heal", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "equipRing", "mining", "eat", "talk", "ui"],
+      modules: ["pz", "xray", "panic", "rune", "heal", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackAoe", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "ui"],
     });
     console.log("minibiaBot.reload()");
     console.log("minibiaBot.attackExclude.addName(\"monster name\")");
