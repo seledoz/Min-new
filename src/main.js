@@ -71,7 +71,7 @@
     currentBundle.installAutoInvisibleModule(bot);
     currentBundle.installAutoMagicShieldModule(bot);
     currentBundle.installAutoAttackModule(bot);
-    bot.attack?.updateConfig?.({ maxTargetDistance: 7 });
+    bot.attack?.updateConfig?.({ maxTargetDistance: 7, runeCooldownMs: 2000 });
     currentBundle.installAutoAttackExcludeModule?.(bot);
     currentBundle.installAutoAttackAoeModule?.(bot);
     currentBundle.installRedTextAlertModule?.(bot);
