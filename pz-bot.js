@@ -15,7 +15,6 @@
     "src/modules/auto-magic-shield.js",
     "src/modules/auto-attack-exclude.js",
     "src/modules/auto-attack.js",
-    "src/modules/auto-attack-target-lock.js",
     "src/modules/auto-attack-aoe.js",
     "src/modules/auto-attack-gfb.js",
     "src/modules/auto-attack-aoe-layout.js",
@@ -121,20 +120,12 @@
       await loadSourceFile(file);
     }
 
-    if (!window.__minibiaBotBundle?.boot) {
-      throw new Error("Bot boot function missing after loading sources");
-    }
-
-    const bot = window.__minibiaBotBundle.boot();
-    window.minibiaBot = bot;
-    window.k9xBot = bot;
     keepPanelTitleBlank();
-    console.log("[minibia-bot] loaded", bot);
-    return bot;
+    console.log("[minibia-bot] source bundle loaded");
   }
 
   loadBot().catch((error) => {
-    console.error("[minibia-bot] load failed", error);
-    alert(`Minibia bot load failed: ${error?.message || error}`);
+    console.error("[minibia-bot] failed to load source bundle", error);
+    alert(`Minibia bot failed to load: ${error.message || error}`);
   });
 })();
