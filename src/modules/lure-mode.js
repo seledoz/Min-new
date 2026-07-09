@@ -6,33 +6,12 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
   const TICK_MS = 150;
 
   const config = Object.assign({ enabled: false, minMonsters: 3, maxDistance: 4 }, bot.storage.get(configStorageKey, {}) || {});
-  const state = {
-    timerId: null,
-    uiTimerId: null,
-    pathfinder: null,
-    originalFindPath: null,
-    suppressingAttack: false,
-    restoreAttackEnabled: false,
-    lastHoldLogAt: 0,
-    lastStatus: null,
-  };
+  const state = { timerId: null, uiTimerId: null, pathfinder: null, originalFindPath: null, suppressingAttack: false, restoreAttackEnabled: false, lastHoldLogAt: 0, lastStatus: null };
 
   function persistConfig() { bot.storage.set(configStorageKey, { ...config }); }
-  function intValue(value, fallback, min = 1, max = 99) {
-    const n = Math.trunc(Number(value));
-    return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
-  }
-  function pos(value) {
-    if (!value) return null;
-    const x = Number(value.x), y = Number(value.y), z = Number(value.z);
-    return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)
-      ? { x: Math.trunc(x), y: Math.trunc(y), z: Math.trunc(z) }
-      : null;
-  }
-  function dist(a, b) {
-    if (!a || !b || Number(a.z) !== Number(b.z)) return Infinity;
-    return Math.max(Math.abs(Number(a.x) - Number(b.x)), Math.abs(Number(a.y) - Number(b.y)));
-  }
+  function intValue(value, fallback, min = 1, max = 99) { const n = Math.trunc(Number(value)); return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback; }
+  function pos(value) { if (!value) return null; const x = Number(value.x), y = Number(value.y), z = Number(value.z); return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) ? { x: Math.trunc(x), y: Math.trunc(y), z: Math.trunc(z) } : null; }
+  function dist(a, b) { if (!a || !b || Number(a.z) !== Number(b.z)) return Infinity; return Math.max(Math.abs(Number(a.x) - Number(b.x)), Math.abs(Number(a.y) - Number(b.y))); }
   function playerPos() { return pos(bot.getPlayerPosition?.() || window.gameClient?.player?.__position); }
   function monsterPos(monster) { return pos(monster?.getPosition?.() || monster?.__position); }
   function currentTarget() { return bot.attack?.getCurrentTarget?.() || window.gameClient?.player?.__target || null; }
@@ -64,10 +43,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     const attackConfig = bot.attack?.config;
     if (!attackConfig) return false;
     if (shouldSuppress) {
-      if (!state.suppressingAttack) {
-        state.restoreAttackEnabled = !!attackConfig.enabled;
-        state.suppressingAttack = true;
-      }
+      if (!state.suppressingAttack) { state.restoreAttackEnabled = !!attackConfig.enabled; state.suppressingAttack = true; }
       attackConfig.enabled = false;
       return true;
     }
@@ -84,10 +60,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     const pf = window.gameClient?.world?.pathfinder;
     if (!pf) return false;
     let stopped = false;
-    ["stop", "cancel", "clear", "clearPath", "stopWalking", "reset"].forEach((name) => {
-      if (typeof pf[name] !== "function") return;
-      try { pf[name](); stopped = true; } catch (error) {}
-    });
+    ["stop", "cancel", "clear", "clearPath", "stopWalking", "reset"].forEach((name) => { if (typeof pf[name] !== "function") return; try { pf[name](); stopped = true; } catch (error) {} });
     return stopped;
   }
 
@@ -95,9 +68,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     const pf = window.gameClient?.world?.pathfinder;
     if (!pf || typeof pf.findPath !== "function") return false;
     if (state.pathfinder === pf && state.originalFindPath) return true;
-    if (state.pathfinder && state.originalFindPath) {
-      try { state.pathfinder.findPath = state.originalFindPath; } catch (error) {}
-    }
+    if (state.pathfinder && state.originalFindPath) { try { state.pathfinder.findPath = state.originalFindPath; } catch (error) {} }
     state.pathfinder = pf;
     state.originalFindPath = pf.findPath.bind(pf);
     pf.findPath = function lureModeFindPathGuard(...args) {
@@ -106,10 +77,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
       if (status.shouldHoldWalking) {
         const now = Date.now();
         stopCurrentPath();
-        if (now - state.lastHoldLogAt > 1500) {
-          state.lastHoldLogAt = now;
-          bot.log?.("lure mode holding path until monster catches up", { monsterCount: status.monsterCount, closestDistance: status.closestDistance, maxDistance: status.maxDistance, countRange: COUNT_RANGE });
-        }
+        if (now - state.lastHoldLogAt > 1500) { state.lastHoldLogAt = now; bot.log?.("lure mode holding path until monster catches up", { monsterCount: status.monsterCount, closestDistance: status.closestDistance, maxDistance: status.maxDistance, countRange: COUNT_RANGE }); }
         return null;
       }
       return state.originalFindPath(...args);
@@ -117,13 +85,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     return true;
   }
 
-  function restorePathfinder() {
-    if (state.pathfinder && state.originalFindPath) {
-      try { state.pathfinder.findPath = state.originalFindPath; } catch (error) {}
-    }
-    state.pathfinder = null;
-    state.originalFindPath = null;
-  }
+  function restorePathfinder() { if (state.pathfinder && state.originalFindPath) { try { state.pathfinder.findPath = state.originalFindPath; } catch (error) {} } state.pathfinder = null; state.originalFindPath = null; }
 
   function updateStatusUi(status = state.lastStatus || getLureStatus()) {
     const label = document.getElementById("minibia-bot-lure-status");
@@ -139,18 +101,8 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     patchPathfinder();
     const status = getLureStatus();
     state.lastStatus = status;
-    if (!status.enabled || status.hasTarget || status.combatActive) {
-      setAttackSuppressed(false);
-      updateStatusUi(status);
-      return status;
-    }
-    if (status.readyToEngage) {
-      setAttackSuppressed(false);
-      bot.attack?.triggerAttack?.();
-      bot.log?.("lure mode engaging monsters", { monsterCount: status.monsterCount, minMonsters: status.minMonsters, countRange: COUNT_RANGE });
-      updateStatusUi(status);
-      return status;
-    }
+    if (!status.enabled || status.hasTarget || status.combatActive) { setAttackSuppressed(false); updateStatusUi(status); return status; }
+    if (status.readyToEngage) { setAttackSuppressed(false); bot.attack?.triggerAttack?.(); bot.log?.("lure mode engaging monsters", { monsterCount: status.monsterCount, minMonsters: status.minMonsters, countRange: COUNT_RANGE }); updateStatusUi(status); return status; }
     setAttackSuppressed(true);
     if (status.shouldHoldWalking) stopCurrentPath();
     updateStatusUi(status);
@@ -180,14 +132,14 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
 
   function installLureStyle() {
     let style = document.getElementById("minibia-bot-lure-style");
-    if (!style) {
-      style = document.createElement("style");
-      style.id = "minibia-bot-lure-style";
-      document.head.appendChild(style);
-    }
+    if (!style) { style = document.createElement("style"); style.id = "minibia-bot-lure-style"; document.head.appendChild(style); }
     style.textContent = `
+      #minibia-bot-panel { width: min(98vw, 1260px) !important; max-width: calc(100vw - 12px) !important; }
+      #minibia-bot-panel .mb-body:not([hidden]) { grid-template-columns: minmax(0, 1fr) 280px 240px 280px !important; }
+      #minibia-bot-panel .mb-aoe-column { display: grid !important; gap: 10px !important; align-content: start !important; min-width: 0 !important; }
       #minibia-bot-lure-section .mb-field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       #minibia-bot-lure-standalone { display: none !important; }
+      @media (max-width: 760px) { #minibia-bot-panel .mb-body:not([hidden]) { grid-template-columns: 1fr !important; } }
     `;
   }
 
@@ -213,57 +165,34 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     return section;
   }
 
-  function findGreatFireballSection() {
-    const byId = document.getElementById("minibia-bot-gfb-section");
-    if (byId?.parentElement) return byId;
-
-    const labels = Array.from(document.querySelectorAll("#minibia-bot-panel .mb-label, #k9x-panel .mb-label"));
-    const label = labels.find((node) => /great\s*fireball/i.test(String(node.textContent || "")));
-    return label?.closest?.(".mb-section") || null;
-  }
-
   function cleanupDuplicateLurePanels() {
     document.querySelectorAll("#minibia-bot-lure-standalone").forEach((node) => node.remove());
     const sections = Array.from(document.querySelectorAll("#minibia-bot-lure-section"));
-    if (sections.length <= 1) return sections[0] || null;
-
-    const gfb = findGreatFireballSection();
-    const preferred = gfb?.nextElementSibling?.id === "minibia-bot-lure-section" ? gfb.nextElementSibling : sections[0];
-    sections.forEach((node) => { if (node !== preferred) node.remove(); });
-    return preferred;
+    sections.slice(1).forEach((node) => node.remove());
+    return sections[0] || null;
   }
 
   function getOrCreateLureSection() {
     const existing = cleanupDuplicateLurePanels();
-    if (existing) {
-      existing.id = "minibia-bot-lure-section";
-      existing.className = "mb-section mb-column-section";
-      existing.removeAttribute("style");
-      return existing;
-    }
+    if (existing) { existing.id = "minibia-bot-lure-section"; existing.className = "mb-section mb-column-section"; existing.removeAttribute("style"); return existing; }
     return makeSection();
   }
 
-  function moveSectionBelowGfb(section) {
-    const gfb = findGreatFireballSection();
-    if (!gfb?.parentElement) return false;
-    if (section.parentElement !== gfb.parentElement || section.previousElementSibling !== gfb) {
-      gfb.insertAdjacentElement("afterend", section);
-    }
-    return true;
+  function getFourthColumn() {
+    const panel = document.getElementById("minibia-bot-panel") || document.getElementById("k9x-panel");
+    const body = panel?.querySelector?.(".mb-body");
+    if (!panel || !body) return null;
+    let column = document.getElementById("minibia-bot-aoe-column");
+    if (!column) { column = document.createElement("div"); column.id = "minibia-bot-aoe-column"; column.className = "mb-aoe-column"; body.appendChild(column); }
+    return column;
   }
 
   function injectUi() {
     installLureStyle();
-    cleanupDuplicateLurePanels();
     const section = getOrCreateLureSection();
-    const movedUnderGfb = moveSectionBelowGfb(section);
-
-    if (!movedUnderGfb && !section.parentElement) {
-      const aoeColumn = document.getElementById("minibia-bot-aoe-column");
-      if (aoeColumn) aoeColumn.appendChild(section);
-    }
-
+    const column = getFourthColumn();
+    if (column && section.parentElement !== column) column.appendChild(section);
+    else if (column && section.nextSibling) column.appendChild(section);
     cleanupDuplicateLurePanels();
     updateUiValues();
     updateStatusUi();
@@ -276,36 +205,16 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
       attempts += 1;
       injectUi();
       const section = document.getElementById("minibia-bot-lure-section");
-      const gfb = findGreatFireballSection();
-      const correctlyPlaced = !!section && !!gfb && section.previousElementSibling === gfb && section.parentElement === gfb.parentElement;
-      if (correctlyPlaced || attempts >= 240) {
-        window.clearInterval(state.uiTimerId);
-        state.uiTimerId = null;
-      }
+      const column = document.getElementById("minibia-bot-aoe-column");
+      const correctlyPlaced = !!section && !!column && section.parentElement === column;
+      if (correctlyPlaced || attempts >= 120) { window.clearInterval(state.uiTimerId); state.uiTimerId = null; }
     }, 250);
     injectUi();
   }
 
-  function start() {
-    if (state.timerId != null) return false;
-    patchPathfinder();
-    state.timerId = window.setInterval(() => { try { tick(); } catch (error) { bot.log?.("lure mode tick failed", error?.message || error); } }, TICK_MS);
-    return true;
-  }
-
-  function stop() {
-    if (state.timerId != null) window.clearInterval(state.timerId);
-    if (state.uiTimerId != null) window.clearInterval(state.uiTimerId);
-    state.timerId = null;
-    state.uiTimerId = null;
-    setAttackSuppressed(false);
-    restorePathfinder();
-    return true;
-  }
-
-  function status() {
-    return { running: state.timerId != null, config: { ...config, countRange: COUNT_RANGE }, lure: getLureStatus(), suppressingAttack: state.suppressingAttack };
-  }
+  function start() { if (state.timerId != null) return false; patchPathfinder(); state.timerId = window.setInterval(() => { try { tick(); } catch (error) { bot.log?.("lure mode tick failed", error?.message || error); } }, TICK_MS); return true; }
+  function stop() { if (state.timerId != null) window.clearInterval(state.timerId); if (state.uiTimerId != null) window.clearInterval(state.uiTimerId); state.timerId = null; state.uiTimerId = null; setAttackSuppressed(false); restorePathfinder(); return true; }
+  function status() { return { running: state.timerId != null, config: { ...config, countRange: COUNT_RANGE }, lure: getLureStatus(), suppressingAttack: state.suppressingAttack }; }
 
   bot.lureMode = { start, stop, status, updateConfig, getLureStatus, config };
   start();
