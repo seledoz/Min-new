@@ -4,24 +4,26 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
   const repoOwner = "seledoz";
   const repoName = "Min-new";
   const branch = "main";
-  const libraryPath = "waypoints/library.json";
+  const waypointDirectory = "waypoints";
   const tokenStorageKey = "minibiaBot.github.token";
   const statusStorageKey = "minibiaBot.githubWaypointLibrary.lastStatus";
-  const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${libraryPath}`;
-  const rawUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${libraryPath}`;
+  const apiBaseUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents`;
+  const rawBaseUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}`;
 
   function getToken() {
     return String(bot.storage.get(tokenStorageKey, "") || "").trim();
   }
 
-  function setToken(token) {
-    const nextToken = String(token || "").trim();
-    if (nextToken) {
-      bot.storage.set(tokenStorageKey, nextToken);
-    } else {
-      bot.storage.remove(tokenStorageKey);
-    }
-    return nextToken;
+  function hasToken() {
+    return !!getToken();
+  }
+
+  function setToken(value) {
+    const nextValue = String(value || "").trim();
+    if (nextValue) bot.storage.set(tokenStorageKey, nextValue);
+    else bot.storage.remove(tokenStorageKey);
+    updateConnectionUi();
+    return nextValue;
   }
 
   function setStatus(message) {
@@ -29,6 +31,21 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
     bot.storage.set(statusStorageKey, text);
     const label = document.getElementById("minibia-bot-github-waypoints-status");
     if (label) label.textContent = text || "GitHub: idle";
+  }
+
+  function updateConnectionUi() {
+    const connected = hasToken();
+    const label = document.getElementById("minibia-bot-github-waypoints-connection");
+    const setup = document.getElementById("minibia-bot-github-waypoints-setup");
+    const input = document.getElementById("minibia-bot-github-waypoints-token");
+    const toggle = document.getElementById("minibia-bot-github-waypoints-connect");
+    const clear = document.getElementById("minibia-bot-github-waypoints-clear-token");
+
+    if (label) label.textContent = connected ? "GitHub: connected for saving" : "GitHub: setup needed for saving";
+    if (setup) setup.hidden = connected;
+    if (input && connected) input.value = "";
+    if (toggle) toggle.textContent = connected ? "Change GitHub Setup" : "Connect GitHub";
+    if (clear) clear.disabled = !connected;
   }
 
   function normalizePosition(value) {
@@ -47,11 +64,7 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
   function normalizeTransition(value) {
     if (!value) return null;
     const from = normalizePosition(value.from || value);
-    const to = normalizePosition(value.to || {
-      x: value.targetX,
-      y: value.targetY,
-      z: value.targetZ,
-    });
+    const to = normalizePosition(value.to || { x: value.targetX, y: value.targetY, z: value.targetZ });
     if (!from || !to || from.z === to.z) return null;
     return {
       from,
@@ -65,92 +78,134 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
     return Array.isArray(value) ? value.map(normalizeTransition).filter(Boolean) : [];
   }
 
-  function normalizeScript(value) {
-    const name = String(value?.name || "").trim().replace(/\s+/g, " ");
+  function normalizeScript(value, fallbackName = "") {
+    const name = String(value?.name || fallbackName || "").trim().replace(/\s+/g, " ");
     if (!name) return null;
     return {
+      version: 1,
       name,
-      updatedAt: value.updatedAt || null,
-      route: normalizeRoute(value.route),
-      transitions: normalizeTransitions(value.transitions),
+      updatedAt: value?.updatedAt || null,
+      route: normalizeRoute(value?.route),
+      transitions: normalizeTransitions(value?.transitions),
     };
   }
 
-  function normalizeLibrary(value) {
-    const scripts = Array.isArray(value?.scripts) ? value.scripts : [];
-    const deduped = new Map();
-    scripts.map(normalizeScript).filter(Boolean).forEach((script) => {
-      deduped.set(script.name.toLowerCase(), script);
-    });
-    return {
-      version: 1,
-      updatedAt: value?.updatedAt || null,
-      scripts: Array.from(deduped.values()).sort((a, b) => a.name.localeCompare(b.name)),
-    };
+  function getScriptFileBaseName(name) {
+    const cleaned = String(name || "")
+      .trim()
+      .replace(/\.json$/i, "")
+      .replace(/[^a-z0-9 _.-]/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    return cleaned || "waypoints";
+  }
+
+  function getScriptPath(name) {
+    return `${waypointDirectory}/${getScriptFileBaseName(name)}.json`;
+  }
+
+  function getNameFromPath(path) {
+    const fileName = String(path || "").split("/").pop() || "";
+    return fileName.replace(/\.json$/i, "").replace(/[-_]+/g, " ").trim();
+  }
+
+  function encodePath(path) {
+    return String(path || "").split("/").map((part) => encodeURIComponent(part)).join("/");
   }
 
   function encodeBase64Utf8(text) {
     const bytes = new TextEncoder().encode(text);
     let binary = "";
-    bytes.forEach((byte) => {
-      binary += String.fromCharCode(byte);
-    });
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
     return btoa(binary);
   }
 
-  function getHeaders(token = getToken()) {
+  function decodeBase64Utf8(text) {
+    return new TextDecoder().decode(Uint8Array.from(atob(String(text || "").replace(/\s/g, "")), (char) => char.charCodeAt(0)));
+  }
+
+  function getHeaders(value = getToken()) {
     const headers = {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
     };
-    if (token) headers.Authorization = `Bearer ${token}`;
+    if (value) headers.Authorization = `Bearer ${value}`;
     return headers;
   }
 
-  async function fetchLibrary() {
-    const response = await fetch(`${rawUrl}?t=${Date.now()}`, { cache: "no-store" });
-    if (response.status === 404) return normalizeLibrary({ scripts: [] });
-    if (!response.ok) throw new Error(`GitHub load failed: HTTP ${response.status}`);
-    return normalizeLibrary(await response.json());
+  async function fetchJson(url, options = {}) {
+    const response = await fetch(url, { cache: "no-store", ...options });
+    if (!response.ok) {
+      let details = "";
+      try {
+        const data = await response.json();
+        details = data?.message ? ` - ${data.message}` : "";
+      } catch (error) {}
+      throw new Error(`GitHub request failed: HTTP ${response.status}${details}`);
+    }
+    return response.json();
   }
 
-  async function fetchLibraryFileForWrite() {
-    const token = getToken();
-    if (!token) throw new Error("GitHub token missing");
+  async function listScriptFiles() {
+    const url = `${apiBaseUrl}/${encodePath(waypointDirectory)}?ref=${encodeURIComponent(branch)}`;
+    const entries = await fetchJson(url, { headers: getHeaders("") });
+    return (Array.isArray(entries) ? entries : [])
+      .filter((entry) => entry?.type === "file" && /\.json$/i.test(entry.name) && entry.name !== "library.json")
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
 
-    const response = await fetch(`${apiUrl}?ref=${encodeURIComponent(branch)}`, {
-      headers: getHeaders(token),
+  async function fetchScriptByFile(file) {
+    const path = file?.path || getScriptPath(file?.name || "");
+    const fallbackName = getNameFromPath(path);
+    const response = await fetch(`${rawBaseUrl}/${encodePath(path)}?t=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`GitHub load failed: HTTP ${response.status}`);
+    const script = normalizeScript(await response.json(), fallbackName);
+    return script ? { ...script, path } : null;
+  }
+
+  async function listScripts() {
+    const files = await listScriptFiles();
+    const scripts = await Promise.all(files.map((file) => fetchScriptByFile(file).catch(() => ({
+      name: getNameFromPath(file.path || file.name),
+      path: file.path,
+      route: [],
+      transitions: [],
+      updatedAt: null,
+      loadError: true,
+    }))));
+    return scripts.filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async function fetchFileForWrite(path) {
+    const value = getToken();
+    if (!value) throw new Error("Click Connect GitHub first");
+
+    const response = await fetch(`${apiBaseUrl}/${encodePath(path)}?ref=${encodeURIComponent(branch)}`, {
+      headers: getHeaders(value),
       cache: "no-store",
     });
 
-    if (response.status === 404) {
-      return { sha: null, library: normalizeLibrary({ scripts: [] }) };
-    }
-
+    if (response.status === 404) return { sha: null, content: null };
     if (!response.ok) throw new Error(`GitHub read failed: HTTP ${response.status}`);
     const file = await response.json();
-    const decoded = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(file.content || ""), (char) => char.charCodeAt(0))));
-    return { sha: file.sha || null, library: normalizeLibrary(decoded) };
+    return { sha: file.sha || null, content: file.content ? decodeBase64Utf8(file.content) : null };
   }
 
-  async function writeLibrary(library, sha) {
-    const token = getToken();
-    if (!token) throw new Error("GitHub token missing");
+  async function writeScriptFile(path, script, sha) {
+    const value = getToken();
+    if (!value) throw new Error("Click Connect GitHub first");
 
-    const content = JSON.stringify(normalizeLibrary(library), null, 2) + "\n";
+    const content = JSON.stringify(normalizeScript(script, script.name), null, 2) + "\n";
     const body = {
-      message: "Update waypoint library",
+      message: `Save waypoint script: ${script.name}`,
       content: encodeBase64Utf8(content),
       branch,
     };
     if (sha) body.sha = sha;
 
-    const response = await fetch(apiUrl, {
+    const response = await fetch(`${apiBaseUrl}/${encodePath(path)}`, {
       method: "PUT",
-      headers: {
-        ...getHeaders(token),
-        "Content-Type": "application/json",
-      },
+      headers: { ...getHeaders(value), "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
 
@@ -162,13 +217,7 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
       } catch (error) {}
       throw new Error(`GitHub save failed: HTTP ${response.status}${details}`);
     }
-
     return response.json();
-  }
-
-  async function listScripts() {
-    const library = await fetchLibrary();
-    return library.scripts;
   }
 
   async function saveCurrentScript(name) {
@@ -179,42 +228,30 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
     const transitions = normalizeTransitions(bot.cave?.getTransitions?.() || []);
     if (!route.length) throw new Error("No waypoints to save");
 
-    const { sha, library } = await fetchLibraryFileForWrite();
-    const nextScript = {
-      name: scriptName,
-      updatedAt: new Date().toISOString(),
-      route,
-      transitions,
-    };
-    const existingIndex = library.scripts.findIndex((script) => script.name.toLowerCase() === scriptName.toLowerCase());
-    if (existingIndex >= 0) {
-      library.scripts[existingIndex] = nextScript;
-    } else {
-      library.scripts.push(nextScript);
-    }
-    library.updatedAt = nextScript.updatedAt;
-
-    await writeLibrary(library, sha);
+    const path = getScriptPath(scriptName);
+    const { sha } = await fetchFileForWrite(path);
+    const script = { version: 1, name: scriptName, updatedAt: new Date().toISOString(), route, transitions };
+    await writeScriptFile(path, script, sha);
     bot.cave?.savePreset?.(scriptName);
-    bot.log("GitHub waypoint script saved", {
-      name: scriptName,
-      waypoints: route.length,
-      transitions: transitions.length,
-      path: libraryPath,
-    });
-    return nextScript;
+    bot.log("GitHub waypoint script saved", { name: scriptName, waypoints: route.length, transitions: transitions.length, path });
+    return { ...script, path };
   }
 
-  async function loadScript(name) {
-    const scriptName = String(name || "").trim();
-    if (!scriptName) throw new Error("Choose a script to load");
+  async function loadScript(nameOrPath) {
+    const value = String(nameOrPath || "").trim();
+    if (!value) throw new Error("Choose a script to load");
 
-    const library = await fetchLibrary();
-    const script = library.scripts.find((entry) => entry.name.toLowerCase() === scriptName.toLowerCase());
-    if (!script) throw new Error(`Script not found: ${scriptName}`);
+    const scripts = await listScripts();
+    const summary = scripts.find((entry) =>
+      entry.path === value ||
+      entry.name.toLowerCase() === value.toLowerCase() ||
+      getScriptFileBaseName(entry.name).toLowerCase() === getScriptFileBaseName(value).toLowerCase()
+    );
+    if (!summary) throw new Error(`Script not found: ${value}`);
 
-    const route = normalizeRoute(script.route);
-    if (!route.length) throw new Error(`Script has no waypoints: ${scriptName}`);
+    const script = await fetchScriptByFile(summary);
+    const route = normalizeRoute(script?.route);
+    if (!script || !route.length) throw new Error(`Script has no waypoints: ${summary.name || value}`);
 
     bot.cave?.stop?.();
     bot.cave?.clearWaypoints?.();
@@ -222,13 +259,12 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
     route.forEach((waypoint) => bot.cave?.addWaypoint?.(waypoint));
     bot.cave?.savePreset?.(script.name);
     bot.cave?.loadPreset?.(script.name);
-
     bot.log("GitHub waypoint script loaded", {
       name: script.name,
       waypoints: route.length,
       transitionsSavedInFile: normalizeTransitions(script.transitions).length,
+      path: script.path,
     });
-
     return script;
   }
 
@@ -237,6 +273,7 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
     const nameInput = document.getElementById("minibia-bot-github-waypoints-name");
     if (!select) return;
 
+    updateConnectionUi();
     setStatus("GitHub: loading scripts...");
     const scripts = await listScripts();
     const activeName = bot.cave?.getActivePresetName?.() || "";
@@ -251,17 +288,18 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
     } else {
       scripts.forEach((script) => {
         const option = document.createElement("option");
-        option.value = script.name;
+        option.value = script.path || getScriptPath(script.name);
         option.textContent = `${script.name} (${script.route.length})`;
         select.appendChild(option);
       });
       select.disabled = false;
       const match = scripts.find((script) => script.name.toLowerCase() === activeName.toLowerCase());
-      select.value = match?.name || scripts[0].name;
+      select.value = match?.path || scripts[0].path || "";
     }
 
     if (nameInput && !nameInput.value.trim()) {
-      nameInput.value = activeName || select.value || "";
+      const selectedScript = scripts.find((script) => script.path === select.value);
+      nameInput.value = activeName || selectedScript?.name || "";
     }
     setStatus(`GitHub: ${scripts.length} script${scripts.length === 1 ? "" : "s"} found`);
   }
@@ -277,7 +315,15 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
     section.innerHTML = `
       <div class="mb-label">GitHub Waypoints</div>
       <div class="mb-stack">
-        <input type="password" id="minibia-bot-github-waypoints-token" placeholder="GitHub token for saving" />
+        <div class="mb-small-note" id="minibia-bot-github-waypoints-connection">GitHub: setup needed for saving</div>
+        <div id="minibia-bot-github-waypoints-setup" class="mb-stack">
+          <input type="password" id="minibia-bot-github-waypoints-token" placeholder="GitHub token" />
+          <button type="button" class="mb-small-button" id="minibia-bot-github-waypoints-save-token">Save GitHub Setup</button>
+        </div>
+        <div class="mb-actions mb-actions-inline-two">
+          <button type="button" class="mb-small-button" id="minibia-bot-github-waypoints-connect">Connect GitHub</button>
+          <button type="button" class="mb-small-button" id="minibia-bot-github-waypoints-clear-token">Clear Setup</button>
+        </div>
         <input type="text" id="minibia-bot-github-waypoints-name" placeholder="Script name" />
         <select id="minibia-bot-github-waypoints-select"></select>
         <div class="mb-actions mb-actions-inline-two">
@@ -286,39 +332,61 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
         </div>
         <button type="button" class="mb-small-button" id="minibia-bot-github-waypoints-refresh">Refresh List</button>
         <div class="mb-small-note" id="minibia-bot-github-waypoints-status">GitHub: idle</div>
-        <div class="mb-small-note">Saves to ${libraryPath}. Token is stored only in this browser.</div>
+        <div class="mb-small-note">Each script saves as its own file in ${waypointDirectory}/. Setup is stored only in this browser.</div>
       </div>
     `;
     column.appendChild(section);
 
+    const setup = section.querySelector("#minibia-bot-github-waypoints-setup");
     const tokenInput = section.querySelector("#minibia-bot-github-waypoints-token");
+    const saveTokenButton = section.querySelector("#minibia-bot-github-waypoints-save-token");
+    const connectButton = section.querySelector("#minibia-bot-github-waypoints-connect");
+    const clearButton = section.querySelector("#minibia-bot-github-waypoints-clear-token");
     const nameInput = section.querySelector("#minibia-bot-github-waypoints-name");
     const select = section.querySelector("#minibia-bot-github-waypoints-select");
     const saveButton = section.querySelector("#minibia-bot-github-waypoints-save");
     const loadButton = section.querySelector("#minibia-bot-github-waypoints-load");
     const refreshButton = section.querySelector("#minibia-bot-github-waypoints-refresh");
 
-    if (tokenInput) {
-      tokenInput.value = getToken();
-      tokenInput.addEventListener("change", () => {
-        setToken(tokenInput.value);
-        setStatus(getToken() ? "GitHub: token saved locally" : "GitHub: token cleared");
+    if (connectButton) {
+      connectButton.addEventListener("click", () => {
+        if (setup) setup.hidden = false;
+        if (tokenInput) tokenInput.focus();
+      });
+    }
+
+    if (saveTokenButton) {
+      saveTokenButton.addEventListener("click", () => {
+        setToken(tokenInput?.value || "");
+        setStatus(hasToken() ? "GitHub: connected for saving" : "GitHub: setup cleared");
+      });
+    }
+
+    if (clearButton) {
+      clearButton.addEventListener("click", () => {
+        setToken("");
+        setStatus("GitHub: setup cleared");
       });
     }
 
     if (select && nameInput) {
       select.addEventListener("change", () => {
-        if (select.value) nameInput.value = select.value;
+        const label = select.options[select.selectedIndex]?.textContent || "";
+        const selectedName = label.replace(/\s*\(\d+\)\s*$/, "").trim();
+        if (selectedName) nameInput.value = selectedName;
       });
     }
 
     if (saveButton) {
       saveButton.addEventListener("click", async () => {
         try {
+          if (!hasToken()) {
+            if (setup) setup.hidden = false;
+            throw new Error("Click Connect GitHub first");
+          }
           saveButton.disabled = true;
-          setToken(tokenInput?.value || getToken());
           setStatus("GitHub: saving current script...");
-          const saved = await saveCurrentScript(nameInput?.value || select?.value || "");
+          const saved = await saveCurrentScript(nameInput?.value || "");
           if (nameInput) nameInput.value = saved.name;
           await refreshUi();
           setStatus(`GitHub: saved ${saved.name} (${saved.route.length})`);
@@ -350,16 +418,12 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
 
     if (refreshButton) {
       refreshButton.addEventListener("click", () => {
-        refreshUi().catch((error) => {
-          setStatus(`GitHub: ${error?.message || error}`);
-        });
+        refreshUi().catch((error) => setStatus(`GitHub: ${error?.message || error}`));
       });
     }
 
-    refreshUi().catch((error) => {
-      setStatus(`GitHub: ${error?.message || error}`);
-    });
-
+    updateConnectionUi();
+    refreshUi().catch((error) => setStatus(`GitHub: ${error?.message || error}`));
     return true;
   }
 
@@ -375,12 +439,14 @@ window.__minibiaBotBundle.installGithubWaypointLibraryModule = function installG
 
   bot.githubWaypointLibrary = {
     getToken,
+    hasToken,
     setToken,
     listScripts,
     saveCurrentScript,
     loadScript,
     refreshUi,
-    path: libraryPath,
+    directory: waypointDirectory,
+    getScriptPath,
   };
 
   waitForPanelAndInject();
