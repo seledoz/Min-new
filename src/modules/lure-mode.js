@@ -239,26 +239,45 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     return section;
   }
 
-  function injectUi() {
-    if (document.getElementById("minibia-bot-lure-section")) {
-      updateUiValues();
-      updateStatusUi();
+  function getOrCreateLureSection() {
+    const existing = document.getElementById("minibia-bot-lure-section") || document.getElementById("minibia-bot-lure-standalone");
+    if (existing) {
+      existing.id = "minibia-bot-lure-section";
+      existing.className = "mb-section mb-column-section";
+      existing.style.position = "";
+      existing.style.top = "";
+      existing.style.left = "";
+      existing.style.width = "";
+      return existing;
+    }
+    return makeSection();
+  }
+
+  function moveSectionBelowGfb(section) {
+    const gfbSection = document.getElementById("minibia-bot-gfb-section");
+    if (gfbSection?.parentElement) {
+      if (section.previousElementSibling !== gfbSection || section.parentElement !== gfbSection.parentElement) {
+        gfbSection.insertAdjacentElement("afterend", section);
+      }
       return true;
     }
+    return false;
+  }
 
+  function injectUi() {
     installLureStyle();
-    const gfbSection = document.getElementById("minibia-bot-gfb-section");
-    const aoeColumn = document.getElementById("minibia-bot-aoe-column") || gfbSection?.parentElement;
-    const panel = document.getElementById("minibia-bot-panel") || document.getElementById("k9x-panel");
-    const section = makeSection();
+    const section = getOrCreateLureSection();
+    const movedUnderGfb = moveSectionBelowGfb(section);
 
-    if (gfbSection?.parentElement) {
-      gfbSection.insertAdjacentElement("afterend", section);
-    } else if (aoeColumn) {
-      aoeColumn.appendChild(section);
-    } else {
-      section.id = "minibia-bot-lure-standalone";
-      document.body.appendChild(section);
+    if (!movedUnderGfb && !section.parentElement) {
+      const aoeColumn = document.getElementById("minibia-bot-aoe-column");
+      const panel = document.getElementById("minibia-bot-panel") || document.getElementById("k9x-panel");
+      const fallbackColumn = aoeColumn || panel?.querySelector?.(".mb-cave-column") || panel?.querySelector?.(".mb-main-column") || panel?.querySelector?.(".mb-body");
+      if (fallbackColumn) fallbackColumn.appendChild(section);
+      else {
+        section.id = "minibia-bot-lure-standalone";
+        document.body.appendChild(section);
+      }
     }
 
     updateUiValues();
@@ -270,9 +289,11 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     let attempts = 0;
     state.uiTimerId = window.setInterval(() => {
       attempts += 1;
-      const injected = injectUi();
-      const gfbReady = !!document.getElementById("minibia-bot-gfb-section");
-      if ((injected && gfbReady) || attempts >= 120) {
+      injectUi();
+      const section = document.getElementById("minibia-bot-lure-section");
+      const gfbSection = document.getElementById("minibia-bot-gfb-section");
+      const correctlyPlaced = !!section && !!gfbSection && section.previousElementSibling === gfbSection && section.parentElement === gfbSection.parentElement;
+      if (correctlyPlaced || attempts >= 160) {
         window.clearInterval(state.uiTimerId);
         state.uiTimerId = null;
       }
