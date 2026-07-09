@@ -11,7 +11,7 @@ window.__minibiaBotBundle.installRuneModule = function installRuneModule(bot) {
 
   const config = Object.assign(
     {
-      tickMs: 250,
+      tickMs: 50,
       minHpPercent: 50,
       minFoodSeconds: 30,
       runeSpellWords: "adori vita vis",
@@ -21,7 +21,7 @@ window.__minibiaBotBundle.installRuneModule = function installRuneModule(bot) {
     },
     bot.storage.get(configStorageKey, {})
   );
-  config.tickMs = 250;
+  config.tickMs = 50;
 
   function persistConfig() {
     bot.storage.set(configStorageKey, { ...config });
@@ -93,17 +93,24 @@ window.__minibiaBotBundle.installRuneModule = function installRuneModule(bot) {
     return getGateStatus(now).canMakeRune;
   }
 
-  function tryMakeRune() {
-    if (!canMakeRune()) {
+  function tryMakeRune(now = Date.now()) {
+    const gateStatus = getGateStatus(now);
+    if (!gateStatus.canMakeRune) {
       return false;
     }
 
     const sent = bot.sendChat(config.runeSpellWords);
     if (sent) {
       state.lastRuneAt = Date.now();
+      return true;
     }
 
-    return sent;
+    bot.log("rune spell send failed, will retry", {
+      mana: gateStatus.hasStats ? readStats().mana?.current : null,
+      requiredMana: config.runeManaCost,
+      spell: config.runeSpellWords,
+    });
+    return false;
   }
 
   function scheduleNextTick() {
@@ -111,7 +118,7 @@ window.__minibiaBotBundle.installRuneModule = function installRuneModule(bot) {
 
     state.timerId = window.setTimeout(() => {
       tick();
-    }, config.tickMs);
+    }, Math.max(25, Number(config.tickMs) || 50));
   }
 
   function runImmediateTick() {
@@ -169,7 +176,7 @@ window.__minibiaBotBundle.installRuneModule = function installRuneModule(bot) {
 
   function start(overrides = {}) {
     Object.assign(config, overrides, { enabled: true });
-    config.tickMs = 250;
+    config.tickMs = 50;
     persistConfig();
 
     if (state.running) {
@@ -215,7 +222,7 @@ window.__minibiaBotBundle.installRuneModule = function installRuneModule(bot) {
 
   function updateConfig(nextConfig = {}) {
     Object.assign(config, nextConfig);
-    config.tickMs = 250;
+    config.tickMs = 50;
     persistConfig();
     bot.log("rune config updated", { ...config });
     return { ...config };
