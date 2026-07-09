@@ -32,7 +32,6 @@
     "src/ui/panel.js",
     "src/modules/github-waypoint-library.js",
     "src/main.js",
-    "src/modules/cave-chase-anti-stuck.js",
   ];
 
   function installUiCompatibilityShim() {
@@ -121,12 +120,20 @@
       await loadSourceFile(file);
     }
 
+    if (!window.__minibiaBotBundle?.boot) {
+      throw new Error("Bot boot function missing after loading sources");
+    }
+
+    const bot = window.__minibiaBotBundle.boot();
+    window.minibiaBot = bot;
+    window.k9xBot = bot;
     keepPanelTitleBlank();
-    console.log("[minibia-bot] source bundle loaded");
+    console.log("[minibia-bot] loaded", bot);
+    return bot;
   }
 
   loadBot().catch((error) => {
-    console.error("[minibia-bot] failed to load source bundle", error);
-    alert(`Minibia bot failed to load: ${error.message || error}`);
+    console.error("[minibia-bot] load failed", error);
+    alert(`Minibia bot load failed: ${error?.message || error}`);
   });
 })();
