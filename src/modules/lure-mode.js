@@ -16,6 +16,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     lastHoldLogAt: 0,
     lastStatus: null,
     clearingPack: false,
+    resumeCaveAfterClear: false,
   };
 
   function persistConfig() { bot.storage.set(configStorageKey, { ...config }); }
@@ -88,6 +89,23 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     return stopped;
   }
 
+  function pauseCaveForFight() {
+    stopCurrentPath();
+    try {
+      const caveStatus = bot.cave?.status?.();
+      if (caveStatus?.running && typeof bot.cave.stop === "function") {
+        state.resumeCaveAfterClear = true;
+        bot.cave.stop();
+      }
+    } catch (error) {}
+  }
+
+  function resumeCaveIfNeeded() {
+    if (!state.resumeCaveAfterClear) return;
+    state.resumeCaveAfterClear = false;
+    try { bot.cave?.start?.(); } catch (error) {}
+  }
+
   function patchPathfinder() {
     const pf = window.gameClient?.world?.pathfinder;
     if (!pf || typeof pf.findPath !== "function") return false;
@@ -130,6 +148,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     if (!status.enabled) {
       state.clearingPack = false;
       setAttackSuppressed(false);
+      resumeCaveIfNeeded();
       updateStatusUi(status);
       return status;
     }
@@ -138,12 +157,13 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
       state.clearingPack = false;
       status = getLureStatus();
       bot.log?.("lure mode pack cleared");
+      resumeCaveIfNeeded();
     }
 
     if (state.clearingPack) {
       setAttackSuppressed(false);
+      pauseCaveForFight();
       if (!status.hasTarget && status.monsterCount > 0) bot.attack?.triggerAttack?.();
-      stopCurrentPath();
       updateStatusUi(getLureStatus());
       return getLureStatus();
     }
@@ -151,8 +171,9 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     if (status.readyToEngage) {
       state.clearingPack = true;
       setAttackSuppressed(false);
+      pauseCaveForFight();
       bot.attack?.triggerAttack?.();
-      stopCurrentPath();
+      window.setTimeout(() => { pauseCaveForFight(); bot.attack?.triggerAttack?.(); }, 100);
       bot.log?.("lure mode engaging pack", { monsterCount: status.monsterCount, minMonsters: status.minMonsters, countRange: COUNT_RANGE });
       updateStatusUi(getLureStatus());
       return getLureStatus();
@@ -175,7 +196,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     if (Object.prototype.hasOwnProperty.call(nextConfig, "minMonsters")) config.minMonsters = intValue(nextConfig.minMonsters, config.minMonsters || 3, 1, 20);
     if (Object.prototype.hasOwnProperty.call(nextConfig, "maxDistance")) config.maxDistance = intValue(nextConfig.maxDistance, config.maxDistance || 4, 1, COUNT_RANGE);
     persistConfig();
-    if (!config.enabled) { state.clearingPack = false; setAttackSuppressed(false); }
+    if (!config.enabled) { state.clearingPack = false; setAttackSuppressed(false); resumeCaveIfNeeded(); }
     bot.log?.("lure mode config updated", { ...config, countRange: COUNT_RANGE });
     updateUiValues();
     updateStatusUi();
@@ -274,8 +295,8 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
   }
 
   function start() { if (state.timerId != null) return false; patchPathfinder(); state.timerId = window.setInterval(() => { try { tick(); } catch (error) { bot.log?.("lure mode tick failed", error?.message || error); } }, TICK_MS); return true; }
-  function stop() { if (state.timerId != null) window.clearInterval(state.timerId); if (state.uiTimerId != null) window.clearInterval(state.uiTimerId); state.timerId = null; state.uiTimerId = null; state.clearingPack = false; setAttackSuppressed(false); restorePathfinder(); return true; }
-  function status() { return { running: state.timerId != null, config: { ...config, countRange: COUNT_RANGE }, lure: getLureStatus(), clearingPack: state.clearingPack, suppressingAttack: state.suppressingAttack }; }
+  function stop() { if (state.timerId != null) window.clearInterval(state.timerId); if (state.uiTimerId != null) window.clearInterval(state.uiTimerId); state.timerId = null; state.uiTimerId = null; state.clearingPack = false; state.resumeCaveAfterClear = false; setAttackSuppressed(false); restorePathfinder(); return true; }
+  function status() { return { running: state.timerId != null, config: { ...config, countRange: COUNT_RANGE }, lure: getLureStatus(), clearingPack: state.clearingPack, resumeCaveAfterClear: state.resumeCaveAfterClear, suppressingAttack: state.suppressingAttack }; }
 
   bot.lureMode = { start, stop, status, updateConfig, getLureStatus, config };
   start();
