@@ -15,7 +15,7 @@
     "src/modules/auto-magic-shield.js",
     "src/modules/auto-attack-exclude.js",
     "src/modules/auto-attack.js",
-    "src/modules/auto-attack-follow-clear-guard.js",
+    "src/modules/auto-attack-block-follow-while-targeted.js",
     "src/modules/auto-attack-aoe.js",
     "src/modules/auto-attack-gfb.js",
     "src/modules/auto-attack-aoe-layout.js",
