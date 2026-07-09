@@ -204,21 +204,8 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     const style = document.createElement("style");
     style.id = "minibia-bot-lure-style";
     style.textContent = `
-      #minibia-bot-lure-section { order: 1; }
       #minibia-bot-lure-section .mb-field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      #minibia-bot-lure-standalone {
-        position: fixed;
-        top: 84px;
-        left: 16px;
-        z-index: 999999;
-        width: 280px;
-        padding: 12px;
-        border: 1px solid rgba(224, 200, 148, 0.45);
-        border-radius: 10px;
-        background: linear-gradient(180deg, rgba(30, 23, 15, 0.95), rgba(15, 11, 8, 0.97));
-        color: #f1e2b8;
-        font: 12px/1.35 Verdana, sans-serif;
-      }
+      #minibia-bot-lure-standalone { position: fixed; top: 84px; left: 16px; z-index: 999999; width: 280px; padding: 12px; border: 1px solid rgba(224, 200, 148, 0.45); border-radius: 10px; background: linear-gradient(180deg, rgba(30, 23, 15, 0.95), rgba(15, 11, 8, 0.97)); color: #f1e2b8; font: 12px/1.35 Verdana, sans-serif; }
       #minibia-bot-lure-standalone input { box-sizing: border-box; width: 100%; padding: 6px 8px; border-radius: 8px; background: rgba(16, 12, 8, 0.88); color: #f7eccf; border: 1px solid rgba(224, 200, 148, 0.35); }
       #minibia-bot-lure-standalone .mb-stack { display: grid; gap: 8px; }
       #minibia-bot-lure-standalone .mb-toggle { display: flex; align-items: center; gap: 8px; color: #d3c49d; }
@@ -260,21 +247,15 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     }
 
     installLureStyle();
+    const gfbSection = document.getElementById("minibia-bot-gfb-section");
+    const aoeColumn = document.getElementById("minibia-bot-aoe-column") || gfbSection?.parentElement;
     const panel = document.getElementById("minibia-bot-panel") || document.getElementById("k9x-panel");
-    const mainColumn = panel?.querySelector?.(".mb-main-column");
-    const caveColumn = panel?.querySelector?.(".mb-cave-column");
-    const body = panel?.querySelector?.(".mb-body");
     const section = makeSection();
 
-    const reloadBlock = document.getElementById("minibia-bot-reload")?.closest?.(".mb-actions");
-    if (mainColumn && reloadBlock?.parentElement === mainColumn) {
-      mainColumn.insertBefore(section, reloadBlock.nextSibling);
-    } else if (mainColumn) {
-      mainColumn.prepend(section);
-    } else if (caveColumn) {
-      caveColumn.prepend(section);
-    } else if (body) {
-      body.prepend(section);
+    if (gfbSection?.parentElement) {
+      gfbSection.insertAdjacentElement("afterend", section);
+    } else if (aoeColumn) {
+      aoeColumn.appendChild(section);
     } else {
       section.id = "minibia-bot-lure-standalone";
       document.body.appendChild(section);
@@ -282,7 +263,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
 
     updateUiValues();
     updateStatusUi();
-    return true;
+    return !!document.getElementById("minibia-bot-lure-section") || !!document.getElementById("minibia-bot-lure-standalone");
   }
 
   function startUiInjector() {
@@ -290,7 +271,8 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     state.uiTimerId = window.setInterval(() => {
       attempts += 1;
       const injected = injectUi();
-      if (injected || attempts >= 80) {
+      const gfbReady = !!document.getElementById("minibia-bot-gfb-section");
+      if ((injected && gfbReady) || attempts >= 120) {
         window.clearInterval(state.uiTimerId);
         state.uiTimerId = null;
       }
