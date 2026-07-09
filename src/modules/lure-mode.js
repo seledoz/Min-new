@@ -25,9 +25,7 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
   function pos(value) {
     if (!value) return null;
     const x = Number(value.x), y = Number(value.y), z = Number(value.z);
-    return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)
-      ? { x: Math.trunc(x), y: Math.trunc(y), z: Math.trunc(z) }
-      : null;
+    return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) ? { x: Math.trunc(x), y: Math.trunc(y), z: Math.trunc(z) } : null;
   }
   function dist(a, b) {
     if (!a || !b || Number(a.z) !== Number(b.z)) return Infinity;
@@ -57,7 +55,6 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     const closestDistance = monsters.length ? monsters[0].distance : Infinity;
     const readyToEngage = !!config.enabled && monsters.length >= minMonsters;
     const luring = !!config.enabled && monsters.length > 0 && !readyToEngage && !hasTarget && !combatActive;
-
     return {
       enabled: !!config.enabled,
       countRange: COUNT_RANGE,
@@ -143,17 +140,25 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     state.originalFindPath = null;
   }
 
+  function updateStatusUi(status = state.lastStatus || getLureStatus()) {
+    const label = document.getElementById("minibia-bot-lure-status");
+    if (!label) return;
+    if (!status.enabled) label.textContent = "Lure: off";
+    else if (status.readyToEngage) label.textContent = `Lure: engaging ${status.monsterCount}/${status.minMonsters}`;
+    else if (status.shouldHoldWalking) label.textContent = `Lure: waiting, closest ${status.closestDistance}/${status.maxDistance}`;
+    else if (status.monsterCount > 0) label.textContent = `Lure: walking ${status.monsterCount}/${status.minMonsters}`;
+    else label.textContent = `Lure: looking 0/${status.minMonsters}`;
+  }
+
   function tick() {
     patchPathfinder();
     const status = getLureStatus();
     state.lastStatus = status;
-
     if (!status.enabled || status.hasTarget || status.combatActive) {
       setAttackSuppressed(false);
       updateStatusUi(status);
       return status;
     }
-
     if (status.readyToEngage) {
       setAttackSuppressed(false);
       bot.attack?.triggerAttack?.();
@@ -161,7 +166,6 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
       updateStatusUi(status);
       return status;
     }
-
     setAttackSuppressed(true);
     if (status.shouldHoldWalking) stopCurrentPath();
     updateStatusUi(status);
@@ -180,16 +184,6 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     return { ...config };
   }
 
-  function updateStatusUi(status = state.lastStatus || getLureStatus()) {
-    const label = document.getElementById("minibia-bot-lure-status");
-    if (!label) return;
-    if (!status.enabled) label.textContent = "Lure: off";
-    else if (status.readyToEngage) label.textContent = `Lure: engaging ${status.monsterCount}/${status.minMonsters}`;
-    else if (status.shouldHoldWalking) label.textContent = `Lure: waiting, closest ${status.closestDistance}/${status.maxDistance}`;
-    else if (status.monsterCount > 0) label.textContent = `Lure: walking ${status.monsterCount}/${status.minMonsters}`;
-    else label.textContent = `Lure: looking 0/${status.minMonsters}`;
-  }
-
   function updateUiValues() {
     const enabled = document.getElementById("minibia-bot-lure-enabled");
     const min = document.getElementById("minibia-bot-lure-min-monsters");
@@ -200,21 +194,16 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
   }
 
   function installLureStyle() {
-    if (document.getElementById("minibia-bot-lure-style")) return;
-    const style = document.createElement("style");
-    style.id = "minibia-bot-lure-style";
+    let style = document.getElementById("minibia-bot-lure-style");
+    if (!style) {
+      style = document.createElement("style");
+      style.id = "minibia-bot-lure-style";
+      document.head.appendChild(style);
+    }
     style.textContent = `
       #minibia-bot-lure-section .mb-field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      #minibia-bot-lure-standalone { position: fixed; top: 84px; left: 16px; z-index: 999999; width: 280px; padding: 12px; border: 1px solid rgba(224, 200, 148, 0.45); border-radius: 10px; background: linear-gradient(180deg, rgba(30, 23, 15, 0.95), rgba(15, 11, 8, 0.97)); color: #f1e2b8; font: 12px/1.35 Verdana, sans-serif; }
-      #minibia-bot-lure-standalone input { box-sizing: border-box; width: 100%; padding: 6px 8px; border-radius: 8px; background: rgba(16, 12, 8, 0.88); color: #f7eccf; border: 1px solid rgba(224, 200, 148, 0.35); }
-      #minibia-bot-lure-standalone .mb-stack { display: grid; gap: 8px; }
-      #minibia-bot-lure-standalone .mb-toggle { display: flex; align-items: center; gap: 8px; color: #d3c49d; }
-      #minibia-bot-lure-standalone .mb-toggle input { width: auto; }
-      #minibia-bot-lure-standalone .mb-field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-      #minibia-bot-lure-standalone .mb-label { margin: 0 0 8px; color: #d3c49d; }
-      #minibia-bot-lure-standalone .mb-field-label, #minibia-bot-lure-standalone .mb-small-note { color: #b7a67d; font-size: 11px; }
+      #minibia-bot-lure-standalone { display: none !important; }
     `;
-    document.head.appendChild(style);
   }
 
   function makeSection() {
@@ -239,15 +228,27 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
     return section;
   }
 
+  function cleanupDuplicateLurePanels() {
+    document.querySelectorAll("#minibia-bot-lure-standalone").forEach((node) => node.remove());
+    const allSections = Array.from(document.querySelectorAll("#minibia-bot-lure-section"));
+    if (allSections.length <= 1) return allSections[0] || null;
+
+    const gfbSection = document.getElementById("minibia-bot-gfb-section");
+    const preferred = gfbSection?.nextElementSibling?.id === "minibia-bot-lure-section"
+      ? gfbSection.nextElementSibling
+      : allSections[0];
+    allSections.forEach((node) => {
+      if (node !== preferred) node.remove();
+    });
+    return preferred;
+  }
+
   function getOrCreateLureSection() {
-    const existing = document.getElementById("minibia-bot-lure-section") || document.getElementById("minibia-bot-lure-standalone");
+    const existing = cleanupDuplicateLurePanels();
     if (existing) {
       existing.id = "minibia-bot-lure-section";
       existing.className = "mb-section mb-column-section";
-      existing.style.position = "";
-      existing.style.top = "";
-      existing.style.left = "";
-      existing.style.width = "";
+      existing.removeAttribute("style");
       return existing;
     }
     return makeSection();
@@ -255,34 +256,27 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
 
   function moveSectionBelowGfb(section) {
     const gfbSection = document.getElementById("minibia-bot-gfb-section");
-    if (gfbSection?.parentElement) {
-      if (section.previousElementSibling !== gfbSection || section.parentElement !== gfbSection.parentElement) {
-        gfbSection.insertAdjacentElement("afterend", section);
-      }
-      return true;
+    if (!gfbSection?.parentElement) return false;
+    if (section.parentElement !== gfbSection.parentElement || section.previousElementSibling !== gfbSection) {
+      gfbSection.insertAdjacentElement("afterend", section);
     }
-    return false;
+    return true;
   }
 
   function injectUi() {
     installLureStyle();
+    cleanupDuplicateLurePanels();
     const section = getOrCreateLureSection();
     const movedUnderGfb = moveSectionBelowGfb(section);
-
     if (!movedUnderGfb && !section.parentElement) {
-      const aoeColumn = document.getElementById("minibia-bot-aoe-column");
       const panel = document.getElementById("minibia-bot-panel") || document.getElementById("k9x-panel");
-      const fallbackColumn = aoeColumn || panel?.querySelector?.(".mb-cave-column") || panel?.querySelector?.(".mb-main-column") || panel?.querySelector?.(".mb-body");
+      const fallbackColumn = document.getElementById("minibia-bot-aoe-column") || panel?.querySelector?.(".mb-cave-column") || panel?.querySelector?.(".mb-main-column") || panel?.querySelector?.(".mb-body");
       if (fallbackColumn) fallbackColumn.appendChild(section);
-      else {
-        section.id = "minibia-bot-lure-standalone";
-        document.body.appendChild(section);
-      }
     }
-
+    cleanupDuplicateLurePanels();
     updateUiValues();
     updateStatusUi();
-    return !!document.getElementById("minibia-bot-lure-section") || !!document.getElementById("minibia-bot-lure-standalone");
+    return !!document.getElementById("minibia-bot-lure-section");
   }
 
   function startUiInjector() {
