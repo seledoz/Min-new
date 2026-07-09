@@ -16,7 +16,7 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
   const config = Object.assign(
     {
       tickMs: 50,
-      healCooldownMs: 2000,
+      healCooldownMs: 2025,
       healRetryMs: 200,
       healConfirmMs: 250,
       minHp: 250,
@@ -28,8 +28,8 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
     bot.storage.get(configStorageKey, {})
   );
 
-  if (!Number.isFinite(Number(config.healCooldownMs)) || Number(config.healCooldownMs) < 2000) {
-    config.healCooldownMs = 2000;
+  if (!Number.isFinite(Number(config.healCooldownMs)) || Number(config.healCooldownMs) < 2025) {
+    config.healCooldownMs = 2025;
   }
 
   function persistConfig() {
@@ -229,8 +229,8 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
 
   function start(overrides = {}) {
     Object.assign(config, overrides, { enabled: true });
-    if (!Number.isFinite(Number(config.healCooldownMs)) || Number(config.healCooldownMs) < 2000) {
-      config.healCooldownMs = 2000;
+    if (!Number.isFinite(Number(config.healCooldownMs)) || Number(config.healCooldownMs) < 2025) {
+      config.healCooldownMs = 2025;
     }
     persistConfig();
 
@@ -294,7 +294,7 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
     }
 
     if (Object.prototype.hasOwnProperty.call(nextConfig, "healCooldownMs")) {
-      nextConfig.healCooldownMs = Math.max(2000, Number(nextConfig.healCooldownMs) || 2000);
+      nextConfig.healCooldownMs = Math.max(2025, Number(nextConfig.healCooldownMs) || 2025);
     }
 
     if (Object.prototype.hasOwnProperty.call(nextConfig, "healRetryMs")) {
@@ -306,8 +306,8 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
     }
 
     Object.assign(config, nextConfig);
-    if (!Number.isFinite(Number(config.healCooldownMs)) || Number(config.healCooldownMs) < 2000) {
-      config.healCooldownMs = 2000;
+    if (!Number.isFinite(Number(config.healCooldownMs)) || Number(config.healCooldownMs) < 2025) {
+      config.healCooldownMs = 2025;
     }
     persistConfig();
     bot.log("auto heal config updated", { ...config });
