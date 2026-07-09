@@ -324,9 +324,12 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
       return true;
     }
 
+    const panel = document.getElementById("minibia-bot-panel") || document.getElementById("k9x-panel");
     const aoeSection = document.getElementById("minibia-bot-auto-attack-aoe-section");
-    const column = document.getElementById("minibia-bot-aoe-column") || aoeSection?.parentElement;
-    if (!aoeSection || !column) return false;
+    const autoAttackSection = document.getElementById("minibia-bot-auto-attack-enabled")?.closest?.(".mb-section");
+    const anchor = aoeSection || autoAttackSection;
+    const column = document.getElementById("minibia-bot-aoe-column") || anchor?.parentElement || panel?.querySelector?.(".mb-cave-column") || panel?.querySelector?.(".mb-body") || panel;
+    if (!column) return false;
 
     const section = document.createElement("div");
     section.className = "mb-section mb-column-section";
@@ -339,18 +342,22 @@ window.__minibiaBotBundle.installLureModeModule = function installLureModeModule
           <span>Enable Lure Mode</span>
         </label>
         <div class="mb-field-grid">
-          <label>Min Monsters</label>
-          <input type="number" id="minibia-bot-lure-min-monsters" min="1" max="20" step="1" />
-          <label>Max Distance</label>
-          <input type="number" id="minibia-bot-lure-max-distance" min="1" max="7" step="1" />
+          <label class="mb-field" for="minibia-bot-lure-min-monsters">
+            <span class="mb-field-label">Min Monsters</span>
+            <input type="number" id="minibia-bot-lure-min-monsters" min="1" max="20" step="1" />
+          </label>
+          <label class="mb-field" for="minibia-bot-lure-max-distance">
+            <span class="mb-field-label">Max Distance</span>
+            <input type="number" id="minibia-bot-lure-max-distance" min="1" max="7" step="1" />
+          </label>
         </div>
         <div class="mb-small-note">Counts monsters within 7 sqm. Holds walking until the closest lured monster is within Max Distance.</div>
         <div class="mb-small-note" id="minibia-bot-lure-status">Lure: off</div>
       </div>
     `;
 
-    if (aoeSection.nextSibling) {
-      column.insertBefore(section, aoeSection.nextSibling);
+    if (anchor?.parentElement === column && anchor.nextSibling) {
+      column.insertBefore(section, anchor.nextSibling);
     } else {
       column.appendChild(section);
     }
