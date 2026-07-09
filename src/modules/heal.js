@@ -16,7 +16,7 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
   const config = Object.assign(
     {
       tickMs: 50,
-      healCooldownMs: 1200,
+      healCooldownMs: 2000,
       healRetryMs: 200,
       healConfirmMs: 250,
       minHp: 250,
@@ -27,6 +27,10 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
     },
     bot.storage.get(configStorageKey, {})
   );
+
+  if (!Number.isFinite(Number(config.healCooldownMs)) || Number(config.healCooldownMs) < 2000) {
+    config.healCooldownMs = 2000;
+  }
 
   function persistConfig() {
     bot.storage.set(configStorageKey, { ...config });
@@ -225,6 +229,9 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
 
   function start(overrides = {}) {
     Object.assign(config, overrides, { enabled: true });
+    if (!Number.isFinite(Number(config.healCooldownMs)) || Number(config.healCooldownMs) < 2000) {
+      config.healCooldownMs = 2000;
+    }
     persistConfig();
 
     if (state.running) {
@@ -286,6 +293,10 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
       nextConfig.minMana = Math.max(0, Number(nextConfig.minMana) || 0);
     }
 
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "healCooldownMs")) {
+      nextConfig.healCooldownMs = Math.max(2000, Number(nextConfig.healCooldownMs) || 2000);
+    }
+
     if (Object.prototype.hasOwnProperty.call(nextConfig, "healRetryMs")) {
       nextConfig.healRetryMs = Math.max(50, Number(nextConfig.healRetryMs) || 50);
     }
@@ -295,6 +306,9 @@ window.__minibiaBotBundle.installHealModule = function installHealModule(bot) {
     }
 
     Object.assign(config, nextConfig);
+    if (!Number.isFinite(Number(config.healCooldownMs)) || Number(config.healCooldownMs) < 2000) {
+      config.healCooldownMs = 2000;
+    }
     persistConfig();
     bot.log("auto heal config updated", { ...config });
     return { ...config };
