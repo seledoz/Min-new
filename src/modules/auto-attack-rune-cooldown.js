@@ -8,7 +8,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     return;
   }
 
-  const RUNE_COOLDOWN_MS = 2040;
+  const RUNE_COOLDOWN_MS = 2050;
 
   function normalizeRuneCooldown(config) {
     if (!config) return;
