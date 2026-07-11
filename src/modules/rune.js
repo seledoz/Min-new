@@ -5,6 +5,9 @@ window.__minibiaBotBundle.installRuneModule = function installRuneModule(bot) {
   const state = {
     running: false,
     timerId: null,
+    watchdogId: null,
+    lastTickAt: 0,
+    tickInProgress: false,
     lastRuneAt: 0,
   };
   let resumeListenersAttached = false;
@@ -113,10 +116,19 @@ window.__minibiaBotBundle.installRuneModule = function installRuneModule(bot) {
     return false;
   }
 
+  function clearTickTimer() {
+    if (state.timerId != null) {
+      window.clearTimeout(state.timerId);
+      state.timerId = null;
+    }
+  }
+
   function scheduleNextTick() {
     if (!state.running) return;
 
+    clearTickTimer();
     state.timerId = window.setTimeout(() => {
+      state.timerId = null;
       tick();
     }, Math.max(25, Number(config.tickMs) || 50));
   }
@@ -124,11 +136,7 @@ window.__minibiaBotBundle.installRuneModule = function installRuneModule(bot) {
   function runImmediateTick() {
     if (!state.running) return;
 
-    if (state.timerId != null) {
-      window.clearTimeout(state.timerId);
-      state.timerId = null;
-    }
-
+    clearTickTimer();
     tick();
   }
 
@@ -162,14 +170,44 @@ window.__minibiaBotBundle.installRuneModule = function installRuneModule(bot) {
     resumeListenersAttached = false;
   }
 
+  function startWatchdog() {
+    if (state.watchdogId != null) {
+      return;
+    }
+
+    state.watchdogId = window.setInterval(() => {
+      if (!state.running || state.tickInProgress) {
+        return;
+      }
+
+      const staleForMs = Date.now() - state.lastTickAt;
+      if (state.lastTickAt === 0 || staleForMs >= 2000 || state.timerId == null) {
+        bot.log("rune loop watchdog restarting stalled timer", { staleForMs });
+        runImmediateTick();
+      }
+    }, 1000);
+  }
+
+  function stopWatchdog() {
+    if (state.watchdogId != null) {
+      window.clearInterval(state.watchdogId);
+      state.watchdogId = null;
+    }
+  }
+
   function tick() {
-    if (!state.running) return;
+    if (!state.running || state.tickInProgress) return;
+
+    state.tickInProgress = true;
+    state.lastTickAt = Date.now();
 
     try {
       tryMakeRune();
     } catch (error) {
       bot.log("rune tick failed", error?.message || error);
     } finally {
+      state.tickInProgress = false;
+      state.lastTickAt = Date.now();
       scheduleNextTick();
     }
   }
@@ -181,11 +219,14 @@ window.__minibiaBotBundle.installRuneModule = function installRuneModule(bot) {
 
     if (state.running) {
       bot.log("rune maker already running");
+      runImmediateTick();
       return false;
     }
 
     state.running = true;
+    state.lastTickAt = Date.now();
     attachResumeListeners();
+    startWatchdog();
     bot.log("rune maker started", { ...config });
     tick();
     return true;
@@ -194,12 +235,10 @@ window.__minibiaBotBundle.installRuneModule = function installRuneModule(bot) {
   function stop(options = {}) {
     const shouldPersistEnabled = options.persistEnabled !== false;
     state.running = false;
+    state.tickInProgress = false;
 
-    if (state.timerId != null) {
-      window.clearTimeout(state.timerId);
-      state.timerId = null;
-    }
-
+    clearTickTimer();
+    stopWatchdog();
     detachResumeListeners();
 
     if (shouldPersistEnabled) {
@@ -213,11 +252,13 @@ window.__minibiaBotBundle.installRuneModule = function installRuneModule(bot) {
   function status() {
     return {
       running: state.running,
-        config: { ...config },
-        stats: readStats(),
-        gates: getGateStatus(),
-        lastRuneAt: state.lastRuneAt,
-      };
+      config: { ...config },
+      stats: readStats(),
+      gates: getGateStatus(),
+      lastRuneAt: state.lastRuneAt,
+      lastTickAt: state.lastTickAt,
+      watchdogRunning: state.watchdogId != null,
+    };
   }
 
   function updateConfig(nextConfig = {}) {
