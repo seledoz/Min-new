@@ -75,7 +75,6 @@
     currentBundle.installAutoAttackModule(bot);
     bot.attack?.updateConfig?.({ maxTargetDistance: 7, runeCooldownMs: 2000 });
     currentBundle.installAutoAttackExcludeModule?.(bot);
-    currentBundle.installAutoAttackPriorityModule?.(bot);
     currentBundle.installAutoAttackAoeModule?.(bot);
     currentBundle.installRedTextAlertModule?.(bot);
     currentBundle.installCaveModule(bot);
@@ -89,6 +88,7 @@
     currentBundle.installCaveWaypointActionsModule?.(bot);
 
     bot.ui.inject();
+    currentBundle.installAutoAttackPriorityModule?.(bot);
     currentBundle.installLureModeModule?.(bot);
     currentBundle.installGithubWaypointLibraryModule?.(bot);
     removePanelDebugSection();
