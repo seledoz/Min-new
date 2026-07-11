@@ -8,7 +8,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     return;
   }
 
-  const RUNE_COOLDOWN_MS = 2025;
+  const RUNE_COOLDOWN_MS = 2040;
 
   function normalizeRuneCooldown(config) {
     if (!config) return;
@@ -24,7 +24,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 
     normalizeRuneCooldown(attack?.config);
 
-    if (attack?.start && !attack.__runeCooldown2025StartWrapped) {
+    if (attack?.start && !attack.__runeCooldown2040StartWrapped) {
       const originalStart = attack.start;
       attack.start = function startWithRuneCooldown(overrides = {}) {
         if (!Number.isFinite(Number(overrides.runeCooldownMs)) || Number(overrides.runeCooldownMs) < RUNE_COOLDOWN_MS) {
@@ -35,10 +35,10 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
         normalizeRuneCooldown(attack.config);
         return startResult;
       };
-      attack.__runeCooldown2025StartWrapped = true;
+      attack.__runeCooldown2040StartWrapped = true;
     }
 
-    if (attack?.updateConfig && !attack.__runeCooldown2025UpdateWrapped) {
+    if (attack?.updateConfig && !attack.__runeCooldown2040UpdateWrapped) {
       const originalUpdateConfig = attack.updateConfig;
       attack.updateConfig = function updateConfigWithRuneCooldown(nextConfig = {}) {
         if (Object.prototype.hasOwnProperty.call(nextConfig, "runeCooldownMs")) {
@@ -52,7 +52,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
         normalizeRuneCooldown(attack.config);
         return updatedConfig;
       };
-      attack.__runeCooldown2025UpdateWrapped = true;
+      attack.__runeCooldown2040UpdateWrapped = true;
     }
 
     return result;
