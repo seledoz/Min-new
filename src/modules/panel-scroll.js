@@ -11,7 +11,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     #minibia-bot-panel {
       box-sizing: border-box;
       max-height: calc(100vh - 32px);
-      overflow-x: hidden;
+      overflow-x: auto;
       overflow-y: auto;
       overscroll-behavior: contain;
       scrollbar-gutter: stable;
