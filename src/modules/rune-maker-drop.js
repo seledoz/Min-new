@@ -22,6 +22,8 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
     lastExitAt: 0,
     droppedStacks: 0,
     emptyScanCount: 0,
+    pendingDrop: null,
+    lastDropError: null,
   };
 
   const config = Object.assign({
@@ -30,7 +32,8 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
     dropPosition: null,
     tickMs: 500,
     repathMs: 1500,
-    dropDelayMs: 500,
+    dropDelayMs: 700,
+    dropVerifyMs: 1400,
     teleportWaitMs: 1200,
   }, bot.storage.get(configStorageKey, {}) || {});
 
@@ -60,21 +63,21 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
   }
 
   function getItemName(item) {
-    const candidates = [
+    const values = [
       item?.getName?.(), item?.name, item?.type?.name, item?.data?.name,
       item?.itemType?.name, item?.__name, item?.__type?.name,
       item?.getType?.()?.name, item?.getItemType?.()?.name,
     ];
-    return String(candidates.find((value) => value != null && String(value).trim()) || "").trim();
+    return String(values.find((value) => value != null && String(value).trim()) || "").trim();
   }
 
   function getItemId(item) {
-    const candidates = [
+    const values = [
       item?.getId?.(), item?.getID?.(), item?.id, item?.itemId, item?.itemID,
       item?.type?.id, item?.data?.id, item?.itemType?.id, item?.__id,
       item?.getType?.()?.id, item?.getItemType?.()?.id,
     ];
-    for (const value of candidates) {
+    for (const value of values) {
       const number = Number(value);
       if (Number.isFinite(number) && number > 0) return Math.trunc(number);
     }
@@ -82,11 +85,11 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
   }
 
   function getItemCount(item) {
-    const candidates = [
+    const values = [
       item?.getCount?.(), item?.count, item?.amount, item?.quantity,
       item?.stackCount, item?.__count, item?.data?.count,
     ];
-    for (const value of candidates) {
+    for (const value of values) {
       const number = Number(value);
       if (Number.isFinite(number) && number > 0) return Math.trunc(number);
     }
@@ -97,8 +100,7 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
     const id = getItemId(item);
     const name = getItemName(item);
     if (id === BLANK_RUNE_ID || /\bblank rune\b/i.test(name)) return false;
-    if (/\brune\b/i.test(name)) return true;
-    return id != null && id >= RUNE_ID_MIN && id <= RUNE_ID_MAX;
+    return /\brune\b/i.test(name) || (id != null && id >= RUNE_ID_MIN && id <= RUNE_ID_MAX);
   }
 
   function getOpenContainers() {
@@ -120,12 +122,15 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
     return 40;
   }
 
+  function getSlotItem(container, index) {
+    return container?.getSlotItem?.(index) || container?.slots?.[index]?.item || container?.slots?.[index] || null;
+  }
+
   function findNextRune() {
     const containers = getOpenContainers();
     for (const container of containers) {
-      const slotCount = getContainerSlotCount(container);
-      for (let index = 0; index < slotCount; index += 1) {
-        const item = container.getSlotItem?.(index) || container.slots?.[index]?.item || container.slots?.[index] || null;
+      for (let index = 0; index < getContainerSlotCount(container); index += 1) {
+        const item = getSlotItem(container, index);
         if (!item || !isDroppableRune(item)) continue;
         return {
           container,
@@ -141,11 +146,11 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
   }
 
   function getTile(position) {
-    const normalized = normalizePosition(position);
-    if (!normalized) return null;
+    const p = normalizePosition(position);
+    if (!p) return null;
     try {
-      return window.gameClient?.world?.getTileFromWorldPosition?.(new Position(normalized.x, normalized.y, normalized.z)) || null;
-    } catch (error) {
+      return window.gameClient?.world?.getTileFromWorldPosition?.(new Position(p.x, p.y, p.z)) || null;
+    } catch (_) {
       return null;
     }
   }
@@ -164,26 +169,125 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
     }
   }
 
-  function moveRuneToGround(entry) {
-    const tile = getTile(config.dropPosition);
-    const mouse = window.gameClient?.mouse;
-    if (!entry || !tile || !mouse) return false;
-    const source = { which: entry.container, index: entry.index };
-    const destination = { which: tile, index: 0xFF };
-    const count = entry.count;
-    const methods = ["__handleItemMove", "moveItem", "__moveItem", "move"];
+  function methodNames(object) {
+    const names = new Set();
+    let current = object;
+    for (let depth = 0; current && depth < 4; depth += 1) {
+      Object.getOwnPropertyNames(current).forEach((name) => names.add(name));
+      current = Object.getPrototypeOf(current);
+    }
+    return [...names];
+  }
 
-    for (const method of methods) {
-      if (typeof mouse[method] !== "function") continue;
-      try {
-        mouse[method](source, destination, count);
-        bot.log("rune maker drop move requested", { method, rune: entry.name, id: entry.id, count });
-        return true;
-      } catch (error) {
-        bot.log("rune maker drop move method failed", { method, error: error?.message || error });
+  function buildMoveAttempts(entry, tile) {
+    const game = window.gameClient;
+    const objects = [
+      ["mouse", game?.mouse],
+      ["client", game],
+      ["player", game?.player],
+      ["world", game?.world],
+      ["interface", game?.interface],
+      ["container", entry.container],
+    ].filter(([, object]) => object);
+
+    const preferred = [
+      "__handleItemMove", "handleItemMove", "moveItem", "__moveItem",
+      "moveThing", "__moveThing", "dropItem", "dragItem", "move",
+    ];
+    const attempts = [];
+    const sourceContainer = { which: entry.container, index: entry.index };
+    const sourceItem = { which: entry.item, index: entry.index };
+    const destination = { which: tile, index: 0xFF };
+    const variants = [
+      [sourceContainer, destination, entry.count],
+      [sourceContainer, destination],
+      [sourceItem, destination, entry.count],
+      [sourceItem, destination],
+      [entry.container, entry.index, tile, 0xFF, entry.count],
+      [entry.container, entry.index, tile, entry.count],
+      [entry.item, tile, entry.count],
+      [entry.item, destination, entry.count],
+      [entry.item, sourceContainer, destination, entry.count],
+    ];
+
+    for (const [label, object] of objects) {
+      const names = methodNames(object)
+        .filter((name) => typeof object[name] === "function")
+        .filter((name) => preferred.includes(name) || /(?:move|drop|drag).*(?:item|thing)|(?:item|thing).*(?:move|drop|drag)/i.test(name));
+      names.sort((a, b) => preferred.indexOf(a) - preferred.indexOf(b));
+      for (const name of names) {
+        for (let variant = 0; variant < variants.length; variant += 1) {
+          attempts.push({ label: `${label}.${name}#${variant + 1}`, run: () => object[name](...variants[variant]) });
+        }
       }
     }
-    bot.log("rune maker drop could not find an item move method");
+    return attempts;
+  }
+
+  function slotChanged(pending) {
+    const item = getSlotItem(pending.entry.container, pending.entry.index);
+    if (!item) return true;
+    const id = getItemId(item);
+    const count = getItemCount(item);
+    return id !== pending.entry.id || count < pending.entry.count || !isDroppableRune(item);
+  }
+
+  function beginDropAttempt(entry, now) {
+    const tile = getTile(config.dropPosition);
+    if (!tile) {
+      state.lastDropError = "drop tile unavailable";
+      return false;
+    }
+    const attempts = buildMoveAttempts(entry, tile);
+    if (!attempts.length) {
+      state.lastDropError = "no item move API found";
+      bot.log("rune maker drop: no item move API found", {
+        mouseMethods: methodNames(window.gameClient?.mouse || {}).filter((name) => /move|drop|drag/i.test(name)),
+      });
+      return false;
+    }
+    state.pendingDrop = { entry, attempts, attemptIndex: 0, attemptedAt: 0, lastMethod: null };
+    return runNextDropAttempt(now);
+  }
+
+  function runNextDropAttempt(now) {
+    const pending = state.pendingDrop;
+    if (!pending || pending.attemptIndex >= pending.attempts.length) {
+      state.lastDropError = "all item move methods failed";
+      state.phase = "drop-error";
+      bot.log("rune maker drop failed: all move methods had no effect", {
+        rune: pending?.entry?.name,
+        id: pending?.entry?.id,
+        attempts: pending?.attemptIndex || 0,
+      });
+      return false;
+    }
+    const attempt = pending.attempts[pending.attemptIndex++];
+    try {
+      attempt.run();
+      pending.attemptedAt = now;
+      pending.lastMethod = attempt.label;
+      state.lastDropAt = now;
+      bot.log("rune maker drop attempt", { method: attempt.label, rune: pending.entry.name, count: pending.entry.count });
+      return true;
+    } catch (error) {
+      bot.log("rune maker drop attempt threw", { method: attempt.label, error: error?.message || error });
+      return runNextDropAttempt(now);
+    }
+  }
+
+  function verifyPendingDrop(now) {
+    const pending = state.pendingDrop;
+    if (!pending) return false;
+    if (slotChanged(pending)) {
+      bot.log("rune maker drop confirmed", { method: pending.lastMethod, rune: pending.entry.name });
+      state.pendingDrop = null;
+      state.lastDropError = null;
+      state.droppedStacks += 1;
+      state.lastDropAt = now;
+      return true;
+    }
+    if (now - pending.attemptedAt >= config.dropVerifyMs) runNextDropAttempt(now);
     return false;
   }
 
@@ -196,6 +300,8 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
     state.lastExitAt = 0;
     state.droppedStacks = 0;
     state.emptyScanCount = 0;
+    state.pendingDrop = null;
+    state.lastDropError = null;
     if (message) bot.log(message);
   }
 
@@ -216,6 +322,8 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
     state.phase = "walking-to-drop";
     state.droppedStacks = 0;
     state.emptyScanCount = 0;
+    state.pendingDrop = null;
+    state.lastDropError = null;
     bot.log("rune maker drop cycle started", { capacity: getCapacity(), returnPosition: current, dropPosition: config.dropPosition });
     return walkTo(config.dropPosition);
   }
@@ -229,16 +337,21 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
         state.phase = "dropping";
         state.lastDropAt = 0;
         state.emptyScanCount = 0;
-      } else if (now - state.lastPathAt >= config.repathMs) {
-        walkTo(config.dropPosition);
-      }
+      } else if (now - state.lastPathAt >= config.repathMs) walkTo(config.dropPosition);
       return;
     }
+
+    if (state.phase === "drop-error") return;
 
     if (state.phase === "dropping") {
       if (!samePosition(current, config.dropPosition)) {
         state.phase = "walking-to-drop";
         walkTo(config.dropPosition);
+        return;
+      }
+
+      if (state.pendingDrop) {
+        verifyPendingDrop(now);
         return;
       }
       if (now - state.lastDropAt < config.dropDelayMs) return;
@@ -249,15 +362,12 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
 
       if (rune) {
         state.emptyScanCount = 0;
-        if (moveRuneToGround(rune)) {
-          state.lastDropAt = now;
-          state.droppedStacks += 1;
-        }
+        beginDropAttempt(rune, now);
         return;
       }
 
       if (containersScanned === 0) {
-        bot.log("rune maker drop waiting for an open backpack");
+        state.lastDropError = "open the backpack containing the runes";
         state.lastDropAt = now;
         return;
       }
@@ -336,6 +446,15 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
     return true;
   }
 
+  function retryDrop() {
+    if (state.phase !== "drop-error") return false;
+    state.phase = "dropping";
+    state.pendingDrop = null;
+    state.lastDropError = null;
+    state.lastDropAt = 0;
+    return true;
+  }
+
   function updateConfig(nextConfig = {}) {
     Object.assign(config, nextConfig);
     persistConfig();
@@ -345,7 +464,16 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
   }
 
   function status() {
-    return { running: state.running, phase: state.phase, capacity: getCapacity(), returnPosition: normalizePosition(state.returnPosition), droppedStacks: state.droppedStacks, config: { ...config, dropPosition: normalizePosition(config.dropPosition) } };
+    return {
+      running: state.running,
+      phase: state.phase,
+      capacity: getCapacity(),
+      returnPosition: normalizePosition(state.returnPosition),
+      droppedStacks: state.droppedStacks,
+      pendingMethod: state.pendingDrop?.lastMethod || null,
+      lastDropError: state.lastDropError,
+      config: { ...config, dropPosition: normalizePosition(config.dropPosition) },
+    };
   }
 
   function refreshUi() {
@@ -358,7 +486,8 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
     const drop = normalizePosition(config.dropPosition);
     const capacity = getCapacity();
     if (!drop) statusLabel.textContent = "Drop position: not set";
-    else if (state.phase !== "idle") statusLabel.textContent = `Status: ${state.phase} • cap ${capacity ?? "?"} • dropped ${state.droppedStacks}`;
+    else if (state.phase === "drop-error") statusLabel.textContent = `Status: DROP FAILED • ${state.lastDropError || "unknown move API"}`;
+    else if (state.phase !== "idle") statusLabel.textContent = `Status: ${state.phase} • cap ${capacity ?? "?"} • dropped ${state.droppedStacks}${state.pendingDrop?.lastMethod ? ` • ${state.pendingDrop.lastMethod}` : ""}`;
     else statusLabel.textContent = `Status: ${config.enabled ? "on" : "off"} • cap ${capacity ?? "?"} / ${config.lowCap} • drop ${drop.x}, ${drop.y}, ${drop.z}`;
   }
 
@@ -381,7 +510,7 @@ window.__minibiaBotBundle.installRuneMakerDropModule = function installRuneMaker
     refreshUi();
   }
 
-  bot.runeMakerDrop = { start, stop, status, updateConfig, setDropPosition, config };
+  bot.runeMakerDrop = { start, stop, status, updateConfig, setDropPosition, retryDrop, config };
   if (config.enabled) start();
   else { state.running = true; tick(); }
 };
