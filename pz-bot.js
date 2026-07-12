@@ -33,10 +33,12 @@
     "src/modules/equip-ring.js",
     "src/modules/auto-eat.js",
     "src/modules/talk.js",
+    "src/modules/rune-maker-drop.js",
     "src/ui/panel.js",
     "src/modules/panel-scroll.js",
     "src/modules/github-waypoint-library.js",
     "src/main.js",
+    "src/modules/rune-maker-drop-bootstrap.js",
   ];
 
   function installUiCompatibilityShim() {
