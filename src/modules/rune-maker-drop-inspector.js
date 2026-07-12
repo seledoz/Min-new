@@ -1,11 +1,24 @@
 (() => {
   function getOpenContainers() {
-    const opened = window.gameClient?.player?.__openedContainers;
-    if (!opened) return [];
-    if (Array.isArray(opened)) return opened.filter(Boolean);
-    if (typeof opened.values === "function") return Array.from(opened.values()).filter(Boolean);
-    if (typeof opened[Symbol.iterator] === "function") return Array.from(opened).filter(Boolean);
-    return Object.values(opened).filter(Boolean);
+    const player = window.gameClient?.player;
+    const candidates = [
+      player?.__openedContainers,
+      player?.openedContainers,
+      window.gameClient?.interface?.containerManager?.containers,
+      window.gameClient?.interface?.containers,
+    ];
+
+    for (const opened of candidates) {
+      if (!opened) continue;
+      if (Array.isArray(opened)) return opened.filter(Boolean);
+      if (typeof opened.values === "function") return Array.from(opened.values()).filter(Boolean);
+      if (typeof opened[Symbol.iterator] === "function") return Array.from(opened).filter(Boolean);
+      if (typeof opened === "object") {
+        const values = Object.values(opened).filter(Boolean);
+        if (values.length) return values;
+      }
+    }
+    return [];
   }
 
   function getSlotCount(container) {
@@ -18,73 +31,86 @@
     return 40;
   }
 
+  function safeCall(fn) {
+    try { return typeof fn === "function" ? fn() : null; } catch (error) { return null; }
+  }
+
   function summarizeItem(item, containerIndex, slotIndex) {
     const own = {};
     try {
-      Object.keys(item || {}).slice(0, 40).forEach((key) => {
+      Object.keys(item || {}).slice(0, 60).forEach((key) => {
         const value = item[key];
         if (typeof value !== "function") own[key] = value;
       });
     } catch (error) {}
 
-    const candidates = {
-      getName: (() => { try { return item?.getName?.(); } catch (error) { return null; } })(),
-      name: item?.name ?? null,
-      id: item?.id ?? null,
-      itemId: item?.itemId ?? null,
-      itemID: item?.itemID ?? null,
-      count: item?.count ?? null,
-      amount: item?.amount ?? null,
-      quantity: item?.quantity ?? null,
-      stackCount: item?.stackCount ?? null,
-      typeId: item?.type?.id ?? item?.itemType?.id ?? item?.data?.id ?? null,
-      typeName: item?.type?.name ?? item?.itemType?.name ?? item?.data?.name ?? null,
-    };
-
     return {
       containerIndex,
       slotIndex,
       constructor: item?.constructor?.name || null,
-      candidates,
+      candidates: {
+        getName: safeCall(() => item?.getName?.()),
+        getId: safeCall(() => item?.getId?.()),
+        getID: safeCall(() => item?.getID?.()),
+        getCount: safeCall(() => item?.getCount?.()),
+        name: item?.name ?? item?.__name ?? null,
+        id: item?.id ?? item?.__id ?? null,
+        itemId: item?.itemId ?? null,
+        itemID: item?.itemID ?? null,
+        count: item?.count ?? item?.__count ?? null,
+        amount: item?.amount ?? null,
+        quantity: item?.quantity ?? null,
+        stackCount: item?.stackCount ?? null,
+        typeId: item?.type?.id ?? item?.itemType?.id ?? item?.data?.id ?? item?.__type?.id ?? null,
+        typeName: item?.type?.name ?? item?.itemType?.name ?? item?.data?.name ?? item?.__type?.name ?? null,
+      },
       own,
     };
   }
 
-  function inspectOpenContainers() {
+  function inspectMinibiaContainers() {
     const containers = getOpenContainers();
     const result = containers.map((container, containerIndex) => {
       const items = [];
       const slotCount = getSlotCount(container);
       for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
-        const item = container?.getSlotItem?.(slotIndex) || container?.slots?.[slotIndex]?.item || container?.slots?.[slotIndex] || null;
-        if (!item) continue;
-        items.push(summarizeItem(item, containerIndex, slotIndex));
+        const item = container?.getSlotItem?.(slotIndex) ||
+          container?.slots?.[slotIndex]?.item ||
+          container?.slots?.[slotIndex]?.thing ||
+          container?.slots?.[slotIndex] ||
+          null;
+        if (item) items.push(summarizeItem(item, containerIndex, slotIndex));
       }
       return {
         containerIndex,
         constructor: container?.constructor?.name || null,
         slotCount,
-        ownKeys: Object.keys(container || {}).slice(0, 40),
+        ownKeys: Object.keys(container || {}).slice(0, 60),
         items,
       };
     });
 
-    console.log("[minibia-bot] rune maker open container inspection", result);
+    console.log("[minibia-bot] OPEN CONTAINERS", containers.length, result);
+    if (!containers.length) {
+      console.warn("[minibia-bot] No open containers were found. Keep the rune backpack visibly open and run the command again.");
+    }
     return result;
   }
 
-  function install() {
-    const bot = window.minibiaBot;
-    if (!bot?.runeMakerDrop) return false;
-    bot.runeMakerDrop.inspectOpenContainers = inspectOpenContainers;
-    return true;
-  }
+  window.inspectMinibiaContainers = inspectMinibiaContainers;
 
-  if (!install()) {
-    let attempts = 0;
-    const timer = window.setInterval(() => {
-      attempts += 1;
-      if (install() || attempts >= 20) window.clearInterval(timer);
-    }, 250);
-  }
+  const attach = () => {
+    if (!window.minibiaBot?.runeMakerDrop) return false;
+    window.minibiaBot.runeMakerDrop.inspectOpenContainers = inspectMinibiaContainers;
+    return true;
+  };
+
+  attach();
+  let attempts = 0;
+  const timer = window.setInterval(() => {
+    attempts += 1;
+    if (attach() || attempts >= 40) window.clearInterval(timer);
+  }, 250);
+
+  console.log("[minibia-bot] container inspector ready: inspectMinibiaContainers()");
 })();
