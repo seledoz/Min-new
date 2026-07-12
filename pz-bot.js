@@ -39,6 +39,7 @@
     "src/modules/github-waypoint-library.js",
     "src/main.js",
     "src/modules/rune-maker-drop-bootstrap.js",
+    "src/modules/rune-maker-drop-inspector.js",
   ];
 
   function installUiCompatibilityShim() {
