@@ -21,6 +21,13 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       touch-action: pan-x pan-y;
     }
 
+    /* Keep the normal three-column layout at its full width. When the user
+       resizes the outer panel narrower, this creates real horizontal overflow
+       instead of squeezing or clipping the controls. */
+    #minibia-bot-panel:not([data-collapsed="true"]) .mb-body {
+      min-width: 936px !important;
+    }
+
     #minibia-bot-panel-scroll-controls {
       position: fixed;
       z-index: 2147483647;
