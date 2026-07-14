@@ -172,8 +172,12 @@
 
   function installButton() {
     const section = document.getElementById(SECTION_ID);
-    if (!section || document.getElementById(TEST_BUTTON_ID)) return false;
+    if (!section) return false;
     const stack = section.querySelector(".mb-stack") || section;
+
+    document.getElementById(TEST_BUTTON_ID)?.remove();
+    document.getElementById(STATUS_ID)?.remove();
+
     const button = document.createElement("button");
     button.type = "button";
     button.id = TEST_BUTTON_ID;
@@ -182,7 +186,7 @@
     const status = document.createElement("div");
     status.id = STATUS_ID;
     status.className = "mb-small-note";
-    status.textContent = "Diagnostic: ready";
+    status.textContent = "Diagnostic v2: ready";
     stack.appendChild(button);
     stack.appendChild(status);
     return true;
