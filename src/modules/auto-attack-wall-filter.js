@@ -33,7 +33,7 @@
     return false;
   }
 
-  function blocksLineOfSight(position) {
+  function tileIsBlocked(position) {
     const tile = getTile(position);
     if (!tile || Number(tile.id) === 0) return true;
 
@@ -90,9 +90,66 @@
     if (tiles.length <= 1) return true;
 
     for (let index = 0; index < tiles.length - 1; index += 1) {
-      if (blocksLineOfSight(tiles[index])) return false;
+      if (tileIsBlocked(tiles[index])) return false;
     }
     return true;
+  }
+
+  function hasReachableAdjacentTile(playerPosition, monsterPosition) {
+    const world = window.gameClient?.world;
+    const pathfinder = world?.pathfinder;
+    const startTile = getTile(playerPosition);
+    if (!startTile || !pathfinder || typeof pathfinder.search !== "function") {
+      return false;
+    }
+
+    const offsets = [
+      { x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 },
+      { x: -1, y: -1 }, { x: 1, y: -1 }, { x: -1, y: 1 }, { x: 1, y: 1 },
+    ];
+
+    offsets.sort((left, right) => {
+      const leftDistance = Math.abs(monsterPosition.x + left.x - playerPosition.x) +
+        Math.abs(monsterPosition.y + left.y - playerPosition.y);
+      const rightDistance = Math.abs(monsterPosition.x + right.x - playerPosition.x) +
+        Math.abs(monsterPosition.y + right.y - playerPosition.y);
+      return leftDistance - rightDistance;
+    });
+
+    for (const offset of offsets) {
+      const adjacentPosition = {
+        x: monsterPosition.x + offset.x,
+        y: monsterPosition.y + offset.y,
+        z: monsterPosition.z,
+      };
+
+      if (adjacentPosition.x === playerPosition.x &&
+          adjacentPosition.y === playerPosition.y &&
+          adjacentPosition.z === playerPosition.z) {
+        return true;
+      }
+
+      if (tileIsBlocked(adjacentPosition)) continue;
+      const destinationTile = getTile(adjacentPosition);
+      if (!destinationTile) continue;
+
+      try {
+        const path = pathfinder.search(startTile, destinationTile);
+        if ((Array.isArray(path) && path.length > 0) ||
+            (!Array.isArray(path) && path && Number(path.length) > 0)) {
+          return true;
+        }
+      } catch (_) {}
+    }
+
+    return false;
+  }
+
+  function isEligibleNewTarget(playerPosition, monsterPosition) {
+    return !!monsterPosition &&
+      playerPosition.z === monsterPosition.z &&
+      hasClearLineOfSight(playerPosition, monsterPosition) &&
+      hasReachableAdjacentTile(playerPosition, monsterPosition);
   }
 
   function calledFromAutoAttack() {
@@ -109,7 +166,7 @@
     }
   }
 
-  xray.getVisibleMonsters = function getVisibleMonstersWithWallFilter(options) {
+  xray.getVisibleMonsters = function getVisibleMonstersWithReachabilityFilter(options) {
     const monsters = originalGetVisibleMonsters(options) || [];
     if (!calledFromAutoAttack()) return monsters;
 
@@ -120,10 +177,10 @@
     return monsters.filter((monster) => {
       if (currentTargetId != null && monster?.id === currentTargetId) return true;
       const monsterPosition = normalizePosition(monster?.getPosition?.() || monster?.__position);
-      return hasClearLineOfSight(playerPosition, monsterPosition);
+      return isEligibleNewTarget(playerPosition, monsterPosition);
     });
   };
 
   xray.__wallFilterInstalled = true;
-  console.log("[minibia-bot] strict auto attack wall filter ready");
+  console.log("[minibia-bot] reachable auto target filter ready");
 })();
