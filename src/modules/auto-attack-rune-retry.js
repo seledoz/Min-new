@@ -1,7 +1,16 @@
 (() => {
   const retryMs = 100;
-  let timerId = null;
-  let installedAttack = null;
+  const globalKey = "__minibiaAutoAttackRuneRetry";
+
+  const previous = window[globalKey];
+  if (previous?.timerId != null) {
+    window.clearInterval(previous.timerId);
+  }
+
+  const state = {
+    timerId: null,
+    attack: null,
+  };
 
   function shouldRetry(attack) {
     if (!attack || attack !== window.minibiaBot?.attack) return false;
@@ -11,9 +20,10 @@
     return !!attack.normalizeHotbarSlot?.(attack.config?.runeHotbarSlot);
   }
 
-  function retryTick() {
+  function tick() {
     try {
-      const attack = window.minibiaBot?.attack;
+      const attack = window.minibiaBot?.attack || null;
+      if (attack !== state.attack) state.attack = attack;
       if (shouldRetry(attack)) {
         attack.triggerRune?.(Date.now());
       }
@@ -22,24 +32,6 @@
     }
   }
 
-  function install() {
-    const attack = window.minibiaBot?.attack;
-    if (!attack || attack === installedAttack) return false;
-
-    installedAttack = attack;
-    if (timerId != null) window.clearInterval(timerId);
-    timerId = window.setInterval(retryTick, retryMs);
-
-    window.minibiaBot?.addCleanup?.(() => {
-      if (timerId != null) window.clearInterval(timerId);
-      timerId = null;
-      installedAttack = null;
-    });
-    return true;
-  }
-
-  install();
-  const installerId = window.setInterval(() => {
-    if (install()) window.clearInterval(installerId);
-  }, retryMs);
+  state.timerId = window.setInterval(tick, retryMs);
+  window[globalKey] = state;
 })();
