@@ -63,6 +63,49 @@
     }
   }
 
+  function syncCollapseButtons() {
+    const panel = document.getElementById("minibia-bot-panel");
+    if (!panel) return;
+
+    const collapsed = panel.dataset.collapsed === "true";
+    panel.querySelectorAll("#minibia-bot-collapse, #minibia-bot-collapse-left").forEach((button) => {
+      button.textContent = collapsed ? "+" : "−";
+      button.setAttribute("aria-label", collapsed ? "Maximize panel" : "Minimize panel");
+      button.setAttribute("title", collapsed ? "Maximize" : "Minimize");
+    });
+  }
+
+  function ensureLeftCollapseButton() {
+    const panel = document.getElementById("minibia-bot-panel");
+    const titlebar = panel?.querySelector?.(".mb-titlebar");
+    const rightButton = panel?.querySelector?.("#minibia-bot-collapse");
+    if (!panel || !titlebar || !rightButton) return;
+
+    let leftButton = panel.querySelector("#minibia-bot-collapse-left");
+    if (!leftButton) {
+      leftButton = rightButton.cloneNode(true);
+      leftButton.id = "minibia-bot-collapse-left";
+      titlebar.prepend(leftButton);
+      leftButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        rightButton.click();
+        window.setTimeout(syncCollapseButtons, 0);
+      });
+    }
+
+    if (!document.__minNewCollapseButtonSyncInstalled) {
+      document.__minNewCollapseButtonSyncInstalled = true;
+      document.addEventListener("click", (event) => {
+        if (event.target?.closest?.("#minibia-bot-collapse")) {
+          window.setTimeout(syncCollapseButtons, 0);
+        }
+      });
+    }
+
+    syncCollapseButtons();
+  }
+
   function removePanelDebugSection() {
     const debugToggle = document.getElementById("minibia-bot-debug-enabled");
     const debugSection = debugToggle?.closest?.(".mb-section");
@@ -92,11 +135,13 @@
 
   function keepPanelTitleBlank() {
     blankPanelTitle();
+    ensureLeftCollapseButton();
     removePanelDebugSection();
     removePanicRunnerSection();
     let attempts = 0;
     const timerId = window.setInterval(() => {
       blankPanelTitle();
+      ensureLeftCollapseButton();
       removePanelDebugSection();
       removePanicRunnerSection();
       attempts += 1;
