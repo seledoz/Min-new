@@ -152,24 +152,8 @@
       hasReachableAdjacentTile(playerPosition, monsterPosition);
   }
 
-  function calledFromAutoAttack() {
-    try {
-      const stack = String(new Error().stack || "");
-      return stack.includes("auto-attack.js") ||
-        stack.includes("getMonsterCandidates") ||
-        stack.includes("getNearbyMonsters") ||
-        stack.includes("triggerAttack") ||
-        stack.includes("canAttack") ||
-        stack.includes("tryAttack");
-    } catch (_) {
-      return false;
-    }
-  }
-
   xray.getVisibleMonsters = function getVisibleMonstersWithReachabilityFilter(options) {
     const monsters = originalGetVisibleMonsters(options) || [];
-    if (!calledFromAutoAttack()) return monsters;
-
     const playerPosition = normalizePosition(window.minibiaBot?.getPlayerPosition?.());
     const currentTargetId = window.gameClient?.player?.__target?.id ?? null;
     if (!playerPosition) return monsters;
@@ -182,5 +166,5 @@
   };
 
   xray.__wallFilterInstalled = true;
-  console.log("[minibia-bot] reachable auto target filter ready");
+  console.log("[minibia-bot] global reachable monster filter ready");
 })();
