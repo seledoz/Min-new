@@ -15,6 +15,7 @@
     "src/modules/auto-magic-shield.js",
     "src/modules/auto-attack-exclude.js",
     "src/modules/auto-attack.js",
+    "src/modules/auto-attack-wall-filter.js",
     "src/modules/auto-attack-priority.js",
     "src/modules/auto-attack-rune-cooldown.js",
     "src/modules/auto-attack-block-follow-while-targeted.js",
