@@ -150,6 +150,38 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
   window.setInterval(tickGfbOnly, 250);
 })();
 
+(function clarifyGreatFireballHotkeyMode() {
+  const desiredText = "Hotkey should have Great Fireball set to Use on Target. Picks the best 1-5-5-7-5-5-1 shot and casts only if it hits the minimum.";
+
+  function updateNote() {
+    const sections = [
+      document.getElementById("minibia-bot-gfb-section"),
+      document.getElementById("minibia-bot-gfb-enabled")?.closest?.(".mb-section"),
+    ].filter(Boolean);
+
+    let updated = false;
+    sections.forEach((section) => {
+      const note = Array.from(section.querySelectorAll(".mb-small-note")).find((element) =>
+        /hotkey should have great fireball/i.test(String(element.textContent || ""))
+      );
+      if (note && note.textContent !== desiredText) {
+        note.textContent = desiredText;
+        updated = true;
+      }
+    });
+    return updated;
+  }
+
+  let attempts = 0;
+  const retryId = window.setInterval(() => {
+    attempts += 1;
+    updateNote();
+    if (attempts >= 30) window.clearInterval(retryId);
+  }, 500);
+
+  updateNote();
+})();
+
 (function configureCaptchaAlarmTiming() {
   const desiredConfig = {
     beepIntervalMs: 3000,
