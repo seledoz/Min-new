@@ -41,6 +41,8 @@
     "src/modules/panel-scroll.js",
     "src/modules/github-waypoint-library.js",
     "src/main.js",
+    "src/modules/auto-attack-keep-distance.js",
+    "src/modules/auto-attack-keep-distance-bootstrap.js",
     "src/modules/great-fireball-v2-screen-click-fix.js",
     "src/modules/xray-overlay-floor-mode.js",
     "src/modules/rune-maker-drop-bootstrap.js",
