@@ -39,50 +39,82 @@
     return container;
   }
 
-  function installRuneDropMoveAdapter() {
-    const mouse = window.gameClient?.mouse;
-    if (!mouse || typeof mouse.sendItemMove !== "function") return false;
-    if (mouse.__minNewRuneDropMoveFixed) return true;
+  function getFreshTile(tile) {
+    try {
+      const position = tile?.getPosition?.();
+      if (!position) return tile;
+      return window.gameClient?.world?.getTileFromWorldPosition?.(
+        new Position(position.x, position.y, position.z)
+      ) || tile;
+    } catch (error) {
+      return tile;
+    }
+  }
 
-    const originalSendItemMove = mouse.sendItemMove.bind(mouse);
+  function sendDirectRuneMove(fromObject, toObject, count) {
+    const game = window.gameClient;
+    if (!game || typeof game.send !== "function") {
+      console.warn("[minibia-bot] rune drop: game client send unavailable");
+      return false;
+    }
+    if (typeof ItemMovePacket !== "function") {
+      console.warn("[minibia-bot] rune drop: ItemMovePacket unavailable");
+      return false;
+    }
+    if (!fromObject?.which || !toObject?.which) {
+      console.warn("[minibia-bot] rune drop: missing source or destination");
+      return false;
+    }
 
-    mouse.sendItemMove = function minNewSendItemMove(fromObject, toObject, count) {
-      if (!fromObject?.which || !toObject?.which) return false;
+    const resolvedContainer = resolveRealContainer(fromObject.which, fromObject.index);
+    const destinationTile = getFreshTile(toObject.which);
+    const slot = Math.max(0, Math.trunc(Number(fromObject.index) || 0));
+    const amount = Math.max(1, Math.min(255, Math.trunc(Number(count) || 1)));
+    const containerId = Number(resolvedContainer?.__containerId);
 
-      const resolvedContainer = resolveRealContainer(fromObject.which, fromObject.index);
-      const resolvedFrom = {
-        which: resolvedContainer,
-        index: Math.max(0, Math.trunc(Number(fromObject.index) || 0)),
-      };
-      const resolvedTo = {
-        which: toObject.which,
-        index: Number.isFinite(Number(toObject.index)) ? Math.trunc(Number(toObject.index)) : 0xFF,
-      };
-      const amount = Math.max(1, Math.min(255, Math.trunc(Number(count) || 1)));
+    if (!Number.isFinite(containerId)) {
+      console.warn("[minibia-bot] rune drop: invalid container id", {
+        slot,
+        constructor: resolvedContainer?.constructor?.name || null,
+        keys: Object.keys(resolvedContainer || {}).slice(0, 30),
+      });
+      return false;
+    }
+    if (!destinationTile || destinationTile?.constructor?.name !== "Tile") {
+      console.warn("[minibia-bot] rune drop: invalid destination tile", {
+        constructor: destinationTile?.constructor?.name || null,
+        position: destinationTile?.getPosition?.() || null,
+      });
+      return false;
+    }
 
-      if (!Number.isFinite(Number(resolvedContainer?.__containerId))) {
-        console.warn("[minibia-bot] rune drop could not resolve container id", {
-          slot: resolvedFrom.index,
-          constructor: resolvedContainer?.constructor?.name || null,
-          keys: Object.keys(resolvedContainer || {}).slice(0, 30),
-        });
-        return false;
-      }
+    const source = { which: resolvedContainer, index: slot };
+    const destination = { which: destinationTile, index: 0xFF };
 
-      console.log("[minibia-bot] rune drop sending move", {
-        containerId: resolvedContainer.__containerId,
-        slot: resolvedFrom.index,
-        destination: resolvedTo.which?.getPosition?.() || null,
+    try {
+      const packet = new ItemMovePacket(source, destination, amount);
+      game.send(packet);
+      console.log("[minibia-bot] rune drop packet sent", {
+        containerId,
+        slot,
+        destination: destinationTile.getPosition?.() || null,
         count: amount,
       });
+      return true;
+    } catch (error) {
+      console.error("[minibia-bot] rune drop packet failed", error);
+      return false;
+    }
+  }
 
-      return originalSendItemMove(resolvedFrom, resolvedTo, amount);
-    };
+  function installRuneDropMoveAdapter() {
+    const mouse = window.gameClient?.mouse;
+    if (!mouse) return false;
 
     mouse.__handleItemMove = function runeDropItemMove(fromObject, toObject, count) {
-      return mouse.sendItemMove(fromObject, toObject, count);
+      return sendDirectRuneMove(fromObject, toObject, count);
     };
-
+    mouse.handleItemMove = mouse.__handleItemMove;
     mouse.__minNewRuneDropMoveFixed = true;
     return true;
   }
@@ -183,6 +215,7 @@
   }
 
   window.inspectMinibiaContainers = inspectMinibiaContainers;
+  window.testMinibiaRuneDropMove = sendDirectRuneMove;
 
   const attach = () => {
     installRuneDropMoveAdapter();
@@ -198,5 +231,5 @@
     if (attach() || attempts >= 40) window.clearInterval(timer);
   }, 250);
 
-  console.log("[minibia-bot] rune drop container resolver and inspector ready");
+  console.log("[minibia-bot] direct rune drop packet adapter ready");
 })();
