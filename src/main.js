@@ -8,6 +8,7 @@
     ["magicShield", "minibiaBot.magicShield.config"],
     ["attack", "minibiaBot.attack.config"],
     ["attackAoe", "minibiaBot.attackAoe.config"],
+    ["greatFireballV2", "minibiaBot.greatFireballV2.config"],
     ["lureMode", "minibiaBot.lure.config"],
     ["attackExclude", "minibiaBot.attackExclude.config"],
     ["attackPriority", "minibiaBot.attackPriority.config"],
@@ -89,6 +90,7 @@
 
     bot.ui.inject();
     currentBundle.installAutoAttackPriorityModule?.(bot);
+    currentBundle.installGreatFireballV2Module?.(bot);
     currentBundle.installLureModeModule?.(bot);
     currentBundle.installGithubWaypointLibraryModule?.(bot);
     removePanelDebugSection();
@@ -114,6 +116,7 @@
       attackExclude: bot.attackExclude?.status?.() || null,
       attackPriority: bot.attackPriority?.status?.() || null,
       attackAoe: bot.attackAoe?.status?.() || null,
+      greatFireballV2: bot.greatFireballV2?.status?.() || null,
       lureMode: bot.lureMode?.status?.() || null,
       redTextAlert: bot.redTextAlert?.status?.() || null,
       cave: bot.cave.status(),
@@ -133,7 +136,7 @@
       branch: bot.version.branch,
       commit: bot.version.commit,
       buildDate: bot.version.date,
-      modules: ["pz", "xray", "panic", "rune", "heal", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackPriority", "attackAoe", "lureMode", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "ui"],
+      modules: ["pz", "xray", "panic", "rune", "heal", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackPriority", "attackAoe", "greatFireballV2", "lureMode", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "ui"],
     });
     console.log("minibiaBot.reload()");
     console.log("minibiaBot.attackExclude.addName(\"monster name\")");
@@ -143,6 +146,8 @@
     console.log("minibiaBot.attackPriority.removeName(\"dragon lord\")");
     console.log("minibiaBot.attackAoe.start({ spellHotbarSlot: 5, minMonsters: 3, squareRange: 3 })");
     console.log("minibiaBot.attackAoe.stop()");
+    console.log("minibiaBot.greatFireballV2.start({ hotbarSlot: 8, minMonsters: 4 })");
+    console.log("minibiaBot.greatFireballV2.stop()");
     console.log("minibiaBot.lureMode.updateConfig({ enabled: true, minMonsters: 3, maxDistance: 4 })");
     console.log("minibiaBot.redTextAlert.start()");
     console.log("minibiaBot.redTextAlert.stop()");
