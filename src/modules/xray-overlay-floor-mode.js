@@ -1,6 +1,8 @@
 (() => {
   const storageKey = "minibiaBot.xray.overlayFloorMode";
-  const selectId = "minibia-bot-xray-floor-select";
+  const controlId = "minibia-bot-xray-floor-mode-control";
+  const selectId = "minibia-bot-xray-floor-mode-select";
+  const legacySelectId = "minibia-bot-xray-floor-select";
   const overlayId = "minibia-bot-xray-overlay";
   const statusId = "minibia-bot-xray-overlay-status";
   const validModes = new Set(["all", "current-plus-minus-one"]);
@@ -39,8 +41,7 @@
 
     overlay.querySelectorAll(".mb-xray-marker").forEach((marker) => {
       const offset = markerFloorOffset(marker);
-      const visible = mode === "all" || Math.abs(offset) <= 1;
-      marker.style.display = visible ? "" : "none";
+      marker.style.display = mode === "all" || Math.abs(offset) <= 1 ? "" : "none";
     });
     return true;
   }
@@ -65,16 +66,29 @@
   }
 
   function installControl() {
-    const select = document.getElementById(selectId);
-    if (!select) return false;
+    const status = document.getElementById(statusId);
+    const xraySection = status?.closest?.(".mb-section");
+    if (!status || !xraySection) return false;
 
-    if (select.dataset.overlayFloorModeInstalled !== "true") {
-      select.dataset.overlayFloorModeInstalled = "true";
-      select.innerHTML = `
-        <option value="all">All floors</option>
-        <option value="current-plus-minus-one">Current floor ±1</option>
-      `;
-      select.addEventListener("change", () => {
+    const legacySelect = document.getElementById(legacySelectId);
+    const legacyField = legacySelect?.closest?.(".mb-field");
+    if (legacyField) legacyField.style.display = "none";
+
+    let control = document.getElementById(controlId);
+    if (!control) {
+      control = document.createElement("label");
+      control.id = controlId;
+      control.className = "mb-field";
+      control.innerHTML = `
+        <span class="mb-field-label">Overlay Floor Mode</span>
+        <select id="${selectId}">
+          <option value="all">All Floors</option>
+          <option value="current-plus-minus-one">Current Floor ±1</option>
+        </select>`;
+      status.insertAdjacentElement("afterend", control);
+
+      const select = control.querySelector(`#${selectId}`);
+      select?.addEventListener("change", () => {
         saveMode(select.value);
         window.minibiaBot?.xray?.setSelectedFloor?.(null);
         applyMarkerFilter();
@@ -82,7 +96,8 @@
       });
     }
 
-    if (select.value !== mode) select.value = mode;
+    const select = document.getElementById(selectId);
+    if (select && select.value !== mode) select.value = mode;
     window.minibiaBot?.xray?.setSelectedFloor?.(null);
     updateStatusText();
     return true;
