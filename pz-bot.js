@@ -40,6 +40,7 @@
     "src/modules/panel-scroll.js",
     "src/modules/github-waypoint-library.js",
     "src/main.js",
+    "src/modules/xray-overlay-floor-mode.js",
     "src/modules/rune-maker-drop-bootstrap.js",
     "src/modules/rune-maker-drop-inspector.js",
   ];
