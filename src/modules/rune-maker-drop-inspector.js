@@ -1,17 +1,89 @@
 (() => {
+  function getSlotItem(container, index) {
+    try {
+      return container?.peekItem?.(index) ||
+        container?.getSlotItem?.(index) ||
+        container?.slots?.[index]?.item ||
+        container?.slots?.[index]?.thing ||
+        container?.slots?.[index] ||
+        null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function sameItem(left, right) {
+    if (!left || !right) return false;
+    if (left === right) return true;
+    const leftId = Number(left?.id ?? left?.itemId ?? left?.itemID ?? left?.type?.id ?? left?.data?.id ?? left?.getId?.());
+    const rightId = Number(right?.id ?? right?.itemId ?? right?.itemID ?? right?.type?.id ?? right?.data?.id ?? right?.getId?.());
+    return Number.isFinite(leftId) && Number.isFinite(rightId) && leftId === rightId;
+  }
+
+  function resolveRealContainer(container, slotIndex) {
+    if (!container) return null;
+    if (Number.isFinite(Number(container.__containerId))) return container;
+
+    const player = window.gameClient?.player;
+    if (!player || typeof player.getContainer !== "function") return container;
+    const sourceItem = getSlotItem(container, slotIndex);
+
+    for (let index = 0; index < 256; index += 1) {
+      let candidate = null;
+      try { candidate = player.getContainer(index); } catch (error) {}
+      if (!candidate) continue;
+      if (candidate === container) return candidate;
+      if (sameItem(sourceItem, getSlotItem(candidate, slotIndex))) return candidate;
+    }
+
+    return container;
+  }
+
   function installRuneDropMoveAdapter() {
     const mouse = window.gameClient?.mouse;
     if (!mouse || typeof mouse.sendItemMove !== "function") return false;
+    if (mouse.__minNewRuneDropMoveFixed) return true;
 
-    // The drop module prioritizes __handleItemMove. Route that call through
-    // Minibia's real drag/drop method, using the same from/to object format
-    // as a manual backpack-to-ground drag.
-    mouse.__handleItemMove = function runeDropItemMove(fromObject, toObject, count) {
+    const originalSendItemMove = mouse.sendItemMove.bind(mouse);
+
+    mouse.sendItemMove = function minNewSendItemMove(fromObject, toObject, count) {
       if (!fromObject?.which || !toObject?.which) return false;
-      const amount = Math.max(1, Math.trunc(Number(count) || 1));
-      return mouse.sendItemMove(fromObject, toObject, amount);
+
+      const resolvedContainer = resolveRealContainer(fromObject.which, fromObject.index);
+      const resolvedFrom = {
+        which: resolvedContainer,
+        index: Math.max(0, Math.trunc(Number(fromObject.index) || 0)),
+      };
+      const resolvedTo = {
+        which: toObject.which,
+        index: Number.isFinite(Number(toObject.index)) ? Math.trunc(Number(toObject.index)) : 0xFF,
+      };
+      const amount = Math.max(1, Math.min(255, Math.trunc(Number(count) || 1)));
+
+      if (!Number.isFinite(Number(resolvedContainer?.__containerId))) {
+        console.warn("[minibia-bot] rune drop could not resolve container id", {
+          slot: resolvedFrom.index,
+          constructor: resolvedContainer?.constructor?.name || null,
+          keys: Object.keys(resolvedContainer || {}).slice(0, 30),
+        });
+        return false;
+      }
+
+      console.log("[minibia-bot] rune drop sending move", {
+        containerId: resolvedContainer.__containerId,
+        slot: resolvedFrom.index,
+        destination: resolvedTo.which?.getPosition?.() || null,
+        count: amount,
+      });
+
+      return originalSendItemMove(resolvedFrom, resolvedTo, amount);
     };
 
+    mouse.__handleItemMove = function runeDropItemMove(fromObject, toObject, count) {
+      return mouse.sendItemMove(fromObject, toObject, count);
+    };
+
+    mouse.__minNewRuneDropMoveFixed = true;
     return true;
   }
 
@@ -90,15 +162,12 @@
       const items = [];
       const slotCount = getSlotCount(container);
       for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
-        const item = container?.getSlotItem?.(slotIndex) ||
-          container?.slots?.[slotIndex]?.item ||
-          container?.slots?.[slotIndex]?.thing ||
-          container?.slots?.[slotIndex] ||
-          null;
+        const item = getSlotItem(container, slotIndex);
         if (item) items.push(summarizeItem(item, containerIndex, slotIndex));
       }
       return {
         containerIndex,
+        containerId: container?.__containerId ?? null,
         constructor: container?.constructor?.name || null,
         slotCount,
         ownKeys: Object.keys(container || {}).slice(0, 60),
@@ -129,5 +198,5 @@
     if (attach() || attempts >= 40) window.clearInterval(timer);
   }, 250);
 
-  console.log("[minibia-bot] rune drop move adapter and container inspector ready");
+  console.log("[minibia-bot] rune drop container resolver and inspector ready");
 })();
