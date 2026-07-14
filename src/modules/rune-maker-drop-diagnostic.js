@@ -8,6 +8,7 @@
     const values = [
       item?.getId?.(), item?.getID?.(), item?.id, item?.itemId, item?.itemID,
       item?.type?.id, item?.data?.id, item?.itemType?.id, item?.__id,
+      item?.getType?.()?.id, item?.getItemType?.()?.id,
     ];
     for (const value of values) {
       const number = Number(value);
@@ -17,7 +18,11 @@
   }
 
   function getItemName(item) {
-    const values = [item?.getName?.(), item?.name, item?.type?.name, item?.data?.name, item?.itemType?.name];
+    const values = [
+      item?.getName?.(), item?.name, item?.type?.name, item?.data?.name,
+      item?.itemType?.name, item?.__name, item?.__type?.name,
+      item?.getType?.()?.name, item?.getItemType?.()?.name,
+    ];
     return String(values.find((value) => value != null && String(value).trim()) || "").trim();
   }
 
@@ -80,14 +85,32 @@
     return found;
   }
 
-  function findRune() {
+  function scanItems() {
+    const items = [];
     for (const record of getContainers()) {
       for (let slot = 0; slot < getSlotCount(record.container); slot += 1) {
         const item = getSlotItem(record.container, slot);
-        if (item && isRune(item)) return { ...record, slot, item };
+        if (!item) continue;
+        items.push({ ...record, slot, item });
       }
     }
-    return null;
+    return items;
+  }
+
+  function findRune() {
+    return scanItems().find((entry) => isRune(entry.item)) || null;
+  }
+
+  function describeVisibleItems() {
+    const items = scanItems();
+    if (!items.length) return "no items visible in scanned containers";
+    return items.slice(0, 10).map((entry) => {
+      const id = getItemId(entry.item) ?? "?";
+      const name = getItemName(entry.item) || "unnamed";
+      const count = getItemCount(entry.item);
+      const containerId = entry.container?.__containerId ?? entry.index ?? "?";
+      return `${name} [id ${id}, count ${count}, c${containerId}/s${entry.slot}]`;
+    }).join(" | ");
   }
 
   function setStatus(text) {
@@ -104,7 +127,7 @@
     if (!dropPosition) return setStatus("FAIL: drop position not set");
 
     const rune = findRune();
-    if (!rune) return setStatus("FAIL: no non-blank rune found in open containers");
+    if (!rune) return setStatus(`FAIL: no rune matched. Visible: ${describeVisibleItems()}`);
 
     const containerId = Number(rune.container?.__containerId);
     if (!Number.isFinite(containerId)) {
