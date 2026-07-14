@@ -40,6 +40,7 @@
     "src/main.js",
     "src/modules/rune-maker-drop-bootstrap.js",
     "src/modules/rune-maker-drop-inspector.js",
+    "src/modules/rune-maker-drop-diagnostic.js",
   ];
 
   function installUiCompatibilityShim() {
