@@ -1,4 +1,20 @@
 (() => {
+  function installRuneDropMoveAdapter() {
+    const mouse = window.gameClient?.mouse;
+    if (!mouse || typeof mouse.sendItemMove !== "function") return false;
+
+    // The drop module prioritizes __handleItemMove. Route that call through
+    // Minibia's real drag/drop method, using the same from/to object format
+    // as a manual backpack-to-ground drag.
+    mouse.__handleItemMove = function runeDropItemMove(fromObject, toObject, count) {
+      if (!fromObject?.which || !toObject?.which) return false;
+      const amount = Math.max(1, Math.trunc(Number(count) || 1));
+      return mouse.sendItemMove(fromObject, toObject, amount);
+    };
+
+    return true;
+  }
+
   function getOpenContainers() {
     const player = window.gameClient?.player;
     const candidates = [
@@ -100,6 +116,7 @@
   window.inspectMinibiaContainers = inspectMinibiaContainers;
 
   const attach = () => {
+    installRuneDropMoveAdapter();
     if (!window.minibiaBot?.runeMakerDrop) return false;
     window.minibiaBot.runeMakerDrop.inspectOpenContainers = inspectMinibiaContainers;
     return true;
@@ -112,5 +129,5 @@
     if (attach() || attempts >= 40) window.clearInterval(timer);
   }, 250);
 
-  console.log("[minibia-bot] container inspector ready: inspectMinibiaContainers()");
+  console.log("[minibia-bot] rune drop move adapter and container inspector ready");
 })();
