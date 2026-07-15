@@ -12,6 +12,7 @@
     "src/modules/heal.js",
     "src/modules/damage-tts-alert.js",
     "src/modules/auto-invisible.js",
+    "src/modules/anti-paralyze-hotfix.js",
     "src/modules/auto-magic-shield.js",
     "src/modules/auto-attack-exclude.js",
     "src/modules/auto-attack.js",
