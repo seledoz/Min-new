@@ -4,6 +4,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
   const STORAGE_KEY = "minibiaBot.antiParalyze.config";
   const INSTALL_RETRY_MS = 250;
   const MAX_INSTALL_ATTEMPTS = 80;
+  const PARALYZE_PATTERN = /\b(paraly(?:ze|zed|sis|sed|se)?|paralis(?:ia|ed|is|ysed|yzed)?)\b/i;
 
   function install(bot) {
     if (!bot || bot.__antiParalyzeHotfixInstalled) return !!bot;
@@ -26,198 +27,153 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       timerId: null,
       lastCastAt: 0,
       detectionSource: null,
+      detectedElement: null,
+      observer: null,
+      statusDirty: true,
+      cachedParalyzed: false,
     };
 
     function persistConfig() {
       bot.storage.set(STORAGE_KEY, { ...config });
     }
 
-    function addNamedConditionIds(source, ids) {
-      if (!source) return;
+    function isVisible(element) {
+      if (!(element instanceof Element)) return false;
+      if (element.closest("#minibia-bot-panel")) return false;
 
-      let keys = [];
+      const style = window.getComputedStyle?.(element);
+      if (style && (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0)) {
+        return false;
+      }
+
+      const rect = element.getBoundingClientRect?.();
+      return !!rect && rect.width > 0 && rect.height > 0;
+    }
+
+    function readElementSignals(element) {
+      if (!(element instanceof Element)) return "";
+
+      const values = [
+        element.getAttribute("title"),
+        element.getAttribute("aria-label"),
+        element.getAttribute("alt"),
+        element.getAttribute("data-condition"),
+        element.getAttribute("data-status"),
+        element.getAttribute("data-effect"),
+        element.getAttribute("data-tooltip"),
+        element.getAttribute("name"),
+        element.id,
+        element.className,
+        element.textContent,
+      ];
+
+      if (element instanceof HTMLImageElement) {
+        values.push(element.currentSrc, element.src);
+      }
+
+      const style = element.getAttribute("style");
+      if (style) values.push(style);
+
       try {
-        keys = Object.getOwnPropertyNames(source);
+        const backgroundImage = window.getComputedStyle(element).backgroundImage;
+        if (backgroundImage && backgroundImage !== "none") values.push(backgroundImage);
       } catch (_error) {
-        return;
+        // Ignore elements that disappear while the status window is updating.
       }
 
-      keys.forEach((key) => {
-        if (!/(paraly|paralys|slow)/i.test(key)) return;
-
-        let value;
-        try {
-          value = source[key];
-        } catch (_error) {
-          return;
-        }
-
-        const numericValue = Number(value);
-        if (Number.isFinite(numericValue)) ids.add(numericValue);
-      });
+      return values
+        .filter((value) => value != null && value !== "")
+        .map(String)
+        .join(" ");
     }
 
-    function getParalyzeConditionIds(player, conditions) {
-      const ids = new Set();
-      const sources = [
-        window.ConditionManager,
-        window.ConditionManager?.prototype,
-        conditions?.constructor,
-        conditions?.constructor?.prototype,
-        player?.constructor,
-        player?.constructor?.prototype,
-      ];
+    function looksLikeStatusContainer(element) {
+      if (!(element instanceof Element)) return false;
+      if (element.closest("#minibia-bot-panel")) return false;
 
-      sources.forEach((source) => addNamedConditionIds(source, ids));
-      return ids;
+      const identity = [
+        element.id,
+        element.className,
+        element.getAttribute("role"),
+        element.getAttribute("aria-label"),
+        element.getAttribute("title"),
+        element.getAttribute("data-window"),
+        element.getAttribute("data-panel"),
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      return /(status|condition|effect|buff|debuff|character|state|icon)/i.test(identity);
     }
 
-    function valueLooksParalyzed(value, depth = 0) {
-      if (value == null || depth > 1) return false;
-      if (typeof value === "string") return /(paraly|paralys)/i.test(value);
-      if (typeof value !== "object") return false;
-
-      const fields = [
-        value.name,
-        value.type,
-        value.condition,
-        value.conditionName,
-        value.status,
-        value.label,
-        value.title,
-        value.constructor?.name,
-      ];
-
-      if (fields.some((entry) => typeof entry === "string" && /(paraly|paralys)/i.test(entry))) {
-        return true;
-      }
-
-      if (depth === 0) {
-        for (const key of Object.keys(value).slice(0, 30)) {
-          if (/(paraly|paralys)/i.test(key)) return true;
-          try {
-            if (valueLooksParalyzed(value[key], depth + 1)) return true;
-          } catch (_error) {
-            // Ignore unreadable runtime fields.
-          }
-        }
-      }
-
-      return false;
-    }
-
-    function conditionCollectionHasParalyze(player, conditions) {
-      const conditionIds = getParalyzeConditionIds(player, conditions);
-
-      for (const conditionId of conditionIds) {
-        try {
-          if (conditions?.has?.(conditionId) || player?.hasCondition?.(conditionId)) {
-            state.detectionSource = `condition:${conditionId}`;
-            return true;
-          }
-        } catch (_error) {
-          // Continue through the other detection methods.
-        }
-      }
-
-      if (conditions instanceof Map) {
-        for (const [key, value] of conditions.entries()) {
-          if (valueLooksParalyzed(key) || valueLooksParalyzed(value)) {
-            state.detectionSource = "condition-map";
-            return true;
-          }
-        }
-      } else if (conditions && typeof conditions[Symbol.iterator] === "function") {
-        try {
-          for (const value of conditions) {
-            if (valueLooksParalyzed(value)) {
-              state.detectionSource = "condition-list";
-              return true;
-            }
-          }
-        } catch (_error) {
-          // Some game collections expose an iterator that can throw while updating.
-        }
-      } else if (conditions && typeof conditions === "object") {
-        for (const [key, value] of Object.entries(conditions)) {
-          if (/(paraly|paralys)/i.test(key) || valueLooksParalyzed(value)) {
-            state.detectionSource = "condition-object";
-            return true;
-          }
-        }
-      }
-
-      return false;
-    }
-
-    function readFiniteNumber(object, keys) {
-      for (const key of keys) {
-        let value;
-        try {
-          value = Number(object?.[key]);
-        } catch (_error) {
-          continue;
-        }
-        if (Number.isFinite(value) && value > 0) return value;
-      }
-      return null;
-    }
-
-    function speedLooksParalyzed(player) {
-      const currentSpeed = readFiniteNumber(player, [
-        "speed",
-        "currentSpeed",
-        "movementSpeed",
-        "walkSpeed",
-      ]);
-      const normalSpeed = readFiniteNumber(player, [
-        "baseSpeed",
-        "normalSpeed",
-        "defaultSpeed",
-        "originalSpeed",
-      ]);
-
-      if (currentSpeed == null || normalSpeed == null) return false;
-      if (currentSpeed >= normalSpeed) return false;
-
-      const reduction = normalSpeed - currentSpeed;
-      const reductionRatio = reduction / normalSpeed;
-      if (reduction >= 10 || reductionRatio >= 0.08) {
-        state.detectionSource = `speed:${currentSpeed}/${normalSpeed}`;
-        return true;
-      }
-
-      return false;
-    }
-
-    function statusIconLooksParalyzed() {
+    function collectStatusRoots() {
+      const roots = new Set();
       const selectors = [
-        '[title*="paraly" i]',
-        '[aria-label*="paraly" i]',
-        '[data-condition*="paraly" i]',
-        '[class*="paraly" i]',
-        '[title*="paralis" i]',
-        '[aria-label*="paralis" i]',
+        '[id*="status" i]',
+        '[class*="status" i]',
+        '[id*="condition" i]',
+        '[class*="condition" i]',
+        '[id*="effect" i]',
+        '[class*="effect" i]',
+        '[id*="buff" i]',
+        '[class*="buff" i]',
+        '[id*="debuff" i]',
+        '[class*="debuff" i]',
+        '[aria-label*="status" i]',
+        '[title*="status" i]',
+        '[data-window*="status" i]',
+        '[data-panel*="status" i]',
       ];
 
-      if (document.querySelector(selectors.join(","))) {
-        state.detectionSource = "status-icon";
-        return true;
+      document.querySelectorAll(selectors.join(",")).forEach((element) => {
+        if (looksLikeStatusContainer(element) && isVisible(element)) roots.add(element);
+      });
+
+      // Some clients use a generic window with a heading such as “Status”.
+      document.querySelectorAll("div, section, aside, ul").forEach((element) => {
+        if (!isVisible(element)) return;
+        const ownLabel = [
+          element.getAttribute("aria-label"),
+          element.getAttribute("title"),
+          element.firstElementChild?.textContent,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        if (/^(character\s+)?status(?:\s+effects?)?$/i.test(ownLabel)) roots.add(element);
+      });
+
+      return [...roots];
+    }
+
+    function findParalyzeInStatusWindow() {
+      const roots = collectStatusRoots();
+
+      for (const root of roots) {
+        const candidates = [root, ...root.querySelectorAll("[title], [aria-label], [alt], [data-condition], [data-status], [data-effect], [data-tooltip], img, span, div")];
+        for (const element of candidates) {
+          if (!isVisible(element)) continue;
+          const signals = readElementSignals(element);
+          if (!PARALYZE_PATTERN.test(signals)) continue;
+
+          state.detectedElement = element;
+          state.detectionSource = `status-window:${element.id || element.className || element.tagName}`;
+          return true;
+        }
       }
 
+      state.detectedElement = null;
       return false;
     }
 
     function isParalyzedActive() {
       state.detectionSource = null;
-      const player = window.gameClient?.player;
-      if (!player) return false;
 
-      return (
-        conditionCollectionHasParalyze(player, player.conditions) ||
-        speedLooksParalyzed(player) ||
-        statusIconLooksParalyzed()
-      );
+      if (!state.statusDirty) return state.cachedParalyzed;
+
+      state.cachedParalyzed = findParalyzeInStatusWindow();
+      state.statusDirty = false;
+      return state.cachedParalyzed;
     }
 
     function shouldPrioritizeHeal() {
@@ -261,12 +217,39 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     function tick() {
       if (!state.running) return;
       try {
+        // Re-scan each tick even if the client changes an existing icon without adding a DOM node.
+        state.statusDirty = true;
         tryAntiParalyze();
       } catch (error) {
-        bot.log("anti-paralyze hotfix tick failed", error?.message || error);
+        bot.log("anti-paralyze status-window tick failed", error?.message || error);
       } finally {
         scheduleNextTick();
       }
+    }
+
+    function startObserver() {
+      if (state.observer || !document.documentElement) return;
+      state.observer = new MutationObserver(() => {
+        state.statusDirty = true;
+      });
+      state.observer.observe(document.documentElement, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+        attributeFilter: [
+          "class",
+          "style",
+          "title",
+          "aria-label",
+          "alt",
+          "src",
+          "data-condition",
+          "data-status",
+          "data-effect",
+          "data-tooltip",
+        ],
+      });
     }
 
     function start(overrides = {}) {
@@ -275,16 +258,24 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       persistConfig();
       if (state.running) return false;
       state.running = true;
+      state.statusDirty = true;
+      startObserver();
       tick();
-      bot.log("anti-paralyze hotfix started", { ...config });
+      bot.log("anti-paralyze status-window monitor started", { ...config });
       return true;
     }
 
     function stop(options = {}) {
       state.running = false;
+      state.cachedParalyzed = false;
+      state.detectedElement = null;
       if (state.timerId != null) {
         window.clearTimeout(state.timerId);
         state.timerId = null;
+      }
+      if (state.observer) {
+        state.observer.disconnect();
+        state.observer = null;
       }
       if (options.persistEnabled !== false) {
         config.enabled = false;
@@ -303,12 +294,20 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     }
 
     function status() {
+      state.statusDirty = true;
       const paralyzed = isParalyzedActive();
       return {
         running: state.running,
         config: { ...config },
         paralyzed,
         detectionSource: state.detectionSource,
+        detectedElement: state.detectedElement
+          ? {
+              tag: state.detectedElement.tagName,
+              id: state.detectedElement.id || null,
+              className: String(state.detectedElement.className || "") || null,
+            }
+          : null,
         healPriorityActive: shouldPrioritizeHeal(),
         lastCastAt: state.lastCastAt,
       };
@@ -326,8 +325,14 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     };
     bot.__antiParalyzeHotfixInstalled = true;
 
+    bot.addCleanup?.(() => {
+      if (state.timerId != null) window.clearTimeout(state.timerId);
+      state.observer?.disconnect?.();
+      state.running = false;
+    });
+
     if (config.enabled) start();
-    bot.log("anti-paralyze detection hotfix installed");
+    bot.log("anti-paralyze status-window detection installed");
     return true;
   }
 
