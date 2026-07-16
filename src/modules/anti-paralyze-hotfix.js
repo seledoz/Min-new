@@ -28,6 +28,11 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       lastCastAt: 0,
       detectionSource: null,
       detectedElement: null,
+      uiObserver: null,
+      uiToggle: null,
+      uiSpellInput: null,
+      uiToggleHandler: null,
+      uiSpellHandler: null,
     };
 
     function persistConfig() {
@@ -129,6 +134,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
           safeRead(player, "statusEffects"),
           safeRead(player, "debuffs"),
           safeRead(player, "states"),
+          safeRead(player, "state"),
           player,
         ];
         for (const source of conditionSources) {
@@ -140,11 +146,15 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 
         const currentSpeed = Number(
           safeRead(player, "speed") ?? safeRead(player, "currentSpeed") ??
-          safeRead(player, "movementSpeed") ?? safeRead(player, "walkSpeed")
+          safeRead(player, "movementSpeed") ?? safeRead(player, "walkSpeed") ??
+          safeRead(safeRead(player, "state"), "speed") ??
+          safeRead(safeRead(player, "state"), "currentSpeed")
         );
         const normalSpeed = Number(
           safeRead(player, "baseSpeed") ?? safeRead(player, "normalSpeed") ??
-          safeRead(player, "defaultSpeed") ?? safeRead(player, "originalSpeed")
+          safeRead(player, "defaultSpeed") ?? safeRead(player, "originalSpeed") ??
+          safeRead(safeRead(player, "state"), "baseSpeed") ??
+          safeRead(safeRead(player, "state"), "normalSpeed")
         );
         if (Number.isFinite(currentSpeed) && Number.isFinite(normalSpeed) && normalSpeed > 0) {
           const reduction = normalSpeed - currentSpeed;
@@ -257,13 +267,24 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       }
     }
 
+    function syncUi() {
+      const toggle = document.getElementById("minibia-bot-anti-paralyze-enabled");
+      const spellInput = document.getElementById("minibia-bot-anti-paralyze-spell");
+      if (toggle) toggle.checked = state.running;
+      if (spellInput && document.activeElement !== spellInput) spellInput.value = config.spellWords || "";
+    }
+
     function start(overrides = {}) {
       Object.assign(config, overrides, { enabled: true });
       config.spellWords = String(config.spellWords || "").trim();
       persistConfig();
-      if (state.running) return false;
+      if (state.running) {
+        syncUi();
+        return false;
+      }
       state.running = true;
       tick();
+      syncUi();
       bot.log("anti-paralyze runtime monitor started", { ...config });
       return true;
     }
@@ -278,6 +299,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
         config.enabled = false;
         persistConfig();
       }
+      syncUi();
       return true;
     }
 
@@ -287,7 +309,45 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       }
       Object.assign(config, nextConfig);
       persistConfig();
+      syncUi();
       return { ...config };
+    }
+
+    function bindUiControls() {
+      const toggle = document.getElementById("minibia-bot-anti-paralyze-enabled");
+      const spellInput = document.getElementById("minibia-bot-anti-paralyze-spell");
+      if (!toggle || !spellInput) return false;
+
+      if (state.uiToggle !== toggle) {
+        if (state.uiToggle && state.uiToggleHandler) {
+          state.uiToggle.removeEventListener("change", state.uiToggleHandler, true);
+        }
+        state.uiToggle = toggle;
+        state.uiToggleHandler = (event) => {
+          event.stopImmediatePropagation();
+          const spellWords = String(spellInput.value || "").trim();
+          updateConfig({ spellWords });
+          if (toggle.checked) start({ spellWords });
+          else stop();
+          toggle.checked = state.running;
+        };
+        toggle.addEventListener("change", state.uiToggleHandler, true);
+      }
+
+      if (state.uiSpellInput !== spellInput) {
+        if (state.uiSpellInput && state.uiSpellHandler) {
+          state.uiSpellInput.removeEventListener("change", state.uiSpellHandler, true);
+        }
+        state.uiSpellInput = spellInput;
+        state.uiSpellHandler = (event) => {
+          event.stopImmediatePropagation();
+          updateConfig({ spellWords: spellInput.value });
+        };
+        spellInput.addEventListener("change", state.uiSpellHandler, true);
+      }
+
+      syncUi();
+      return true;
     }
 
     function status() {
@@ -322,7 +382,20 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     bot.__antiParalyzeHotfixInstalled = true;
     bot.__antiParalyzeRuntimeFixInstalled = true;
 
-    bot.addCleanup?.(() => stop({ persistEnabled: false }));
+    state.uiObserver = new MutationObserver(() => bindUiControls());
+    state.uiObserver.observe(document.documentElement, { childList: true, subtree: true });
+    window.setTimeout(bindUiControls, 0);
+
+    bot.addCleanup?.(() => {
+      stop({ persistEnabled: false });
+      state.uiObserver?.disconnect();
+      if (state.uiToggle && state.uiToggleHandler) {
+        state.uiToggle.removeEventListener("change", state.uiToggleHandler, true);
+      }
+      if (state.uiSpellInput && state.uiSpellHandler) {
+        state.uiSpellInput.removeEventListener("change", state.uiSpellHandler, true);
+      }
+    });
 
     if (config.enabled) start();
     bot.log("anti-paralyze runtime detection installed");
