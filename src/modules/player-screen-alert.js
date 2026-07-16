@@ -7,6 +7,8 @@ window.__minibiaBotBundle.installPlayerScreenAlertModule = function installPlaye
   const defaultConfig = {
     enabled: false,
     tickMs: 250,
+    repeatMs: 3000,
+    durationMs: 15000,
     text: "player on screen",
     safeNames: [],
   };
@@ -16,11 +18,15 @@ window.__minibiaBotBundle.installPlayerScreenAlertModule = function installPlaye
     timerId: null,
     uiTimerId: null,
     visibleUnsafePlayerIds: new Set(),
+    alertUntilAt: 0,
+    lastSpokenAt: 0,
   };
 
   const storedConfig = bot.storage.get(configStorageKey, {}) || {};
   const config = Object.assign({}, defaultConfig, storedConfig);
   config.safeNames = normalizeSafeNames(config.safeNames);
+  config.repeatMs = Math.max(500, Number(config.repeatMs) || defaultConfig.repeatMs);
+  config.durationMs = Math.max(1000, Number(config.durationMs) || defaultConfig.durationMs);
 
   function normalizeName(value) {
     return String(value || "").trim().toLowerCase();
@@ -65,18 +71,21 @@ window.__minibiaBotBundle.installPlayerScreenAlertModule = function installPlaye
     return normalized ? `name:${normalized}` : null;
   }
 
-  function speak() {
+  function speak(now = Date.now(), force = false) {
     if (typeof window.speechSynthesis === "undefined" || typeof window.SpeechSynthesisUtterance !== "function") {
       bot.log("player screen alert unavailable: speech synthesis missing");
       return false;
     }
 
+    if (!force && now - state.lastSpokenAt < config.repeatMs) return false;
+
     const utterance = new SpeechSynthesisUtterance(String(config.text || defaultConfig.text));
     window.speechSynthesis.speak(utterance);
+    state.lastSpokenAt = now;
     return true;
   }
 
-  function checkPlayers() {
+  function checkPlayers(now = Date.now()) {
     const visiblePlayers = getVisibleUnsafePlayers();
     const nextVisibleIds = new Set();
     const newlyVisiblePlayers = [];
@@ -91,11 +100,18 @@ window.__minibiaBotBundle.installPlayerScreenAlertModule = function installPlaye
     state.visibleUnsafePlayerIds = nextVisibleIds;
 
     if (newlyVisiblePlayers.length > 0) {
-      speak();
+      state.alertUntilAt = now + config.durationMs;
+      state.lastSpokenAt = 0;
+      speak(now, true);
       bot.log("player on screen alert triggered", {
         players: newlyVisiblePlayers.map((player) => player?.name || player?.id || "unknown"),
+        durationMs: config.durationMs,
       });
       return true;
+    }
+
+    if (state.alertUntilAt > now) {
+      return speak(now);
     }
 
     return false;
@@ -123,6 +139,8 @@ window.__minibiaBotBundle.installPlayerScreenAlertModule = function installPlaye
     state.visibleUnsafePlayerIds = new Set(
       getVisibleUnsafePlayers().map(getPlayerKey).filter(Boolean)
     );
+    state.alertUntilAt = 0;
+    state.lastSpokenAt = 0;
     syncToggle();
 
     if (state.running) return false;
@@ -135,6 +153,8 @@ window.__minibiaBotBundle.installPlayerScreenAlertModule = function installPlaye
   function stop(options = {}) {
     config.enabled = false;
     state.visibleUnsafePlayerIds.clear();
+    state.alertUntilAt = 0;
+    state.lastSpokenAt = 0;
     if (options.persistEnabled !== false) persistConfig();
 
     if (state.timerId != null) {
@@ -175,6 +195,12 @@ window.__minibiaBotBundle.installPlayerScreenAlertModule = function installPlaye
     if (Object.prototype.hasOwnProperty.call(nextConfig, "text")) {
       nextConfig.text = String(nextConfig.text || defaultConfig.text);
     }
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "repeatMs")) {
+      nextConfig.repeatMs = Math.max(500, Number(nextConfig.repeatMs) || defaultConfig.repeatMs);
+    }
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "durationMs")) {
+      nextConfig.durationMs = Math.max(1000, Number(nextConfig.durationMs) || defaultConfig.durationMs);
+    }
     Object.assign(config, nextConfig);
     config.safeNames = normalizeSafeNames(config.safeNames);
     persistConfig();
@@ -192,6 +218,8 @@ window.__minibiaBotBundle.installPlayerScreenAlertModule = function installPlaye
       running: state.running,
       config: { ...config, safeNames: [...config.safeNames] },
       visibleUnsafePlayerIds: [...state.visibleUnsafePlayerIds],
+      alertUntilAt: state.alertUntilAt,
+      lastSpokenAt: state.lastSpokenAt,
     };
   }
 
@@ -275,7 +303,7 @@ window.__minibiaBotBundle.installPlayerScreenAlertModule = function installPlaye
 
     const note = document.createElement("div");
     note.className = "mb-small-note";
-    note.textContent = "Says “player on screen” when a non-safe player enters your visible screen.";
+    note.textContent = "Repeats “player on screen” for 15 seconds when a new non-safe player enters. It re-arms after that player leaves.";
 
     const inputRow = document.createElement("div");
     inputRow.style.display = "flex";
