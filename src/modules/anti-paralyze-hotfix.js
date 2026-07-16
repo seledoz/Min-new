@@ -4,10 +4,10 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
   const STORAGE_KEY = "minibiaBot.antiParalyze.config";
   const INSTALL_RETRY_MS = 250;
   const MAX_INSTALL_ATTEMPTS = 80;
-  const PARALYZE_PATTERN = /\b(paraly(?:ze|zed|sis|sed|se)?|paralis(?:ia|ed|is|ysed|yzed)?)\b/i;
+  const PARALYZE_PATTERN = /(paraly|paralys|paralis|slow)/i;
 
   function install(bot) {
-    if (!bot || bot.__antiParalyzeHotfixInstalled) return !!bot;
+    if (!bot || bot.__antiParalyzeRuntimeFixInstalled) return !!bot;
 
     bot.antiParalyze?.stop?.({ persistEnabled: false });
 
@@ -28,152 +28,188 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       lastCastAt: 0,
       detectionSource: null,
       detectedElement: null,
-      observer: null,
-      statusDirty: true,
-      cachedParalyzed: false,
     };
 
     function persistConfig() {
       bot.storage.set(STORAGE_KEY, { ...config });
     }
 
-    function isVisible(element) {
-      if (!(element instanceof Element)) return false;
-      if (element.closest("#minibia-bot-panel")) return false;
+    function safeRead(object, key) {
+      try {
+        return object?.[key];
+      } catch (_error) {
+        return undefined;
+      }
+    }
 
-      const style = window.getComputedStyle?.(element);
-      if (style && (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0)) {
+    function getPlayerCandidates() {
+      const candidates = [
+        window.gameClient?.player,
+        window.client?.player,
+        window.game?.player,
+        window.Game?.player,
+        window.minibia?.player,
+        bot.gameClient?.player,
+        bot.client?.player,
+        bot.player,
+      ];
+      return [...new Set(candidates.filter(Boolean))];
+    }
+
+    function valueLooksParalyzed(value, depth = 0, seen = new Set()) {
+      if (value == null || depth > 3) return false;
+      if (typeof value === "string") return PARALYZE_PATTERN.test(value);
+      if (typeof value === "number" || typeof value === "boolean") return false;
+      if (typeof value !== "object" && typeof value !== "function") return false;
+      if (seen.has(value)) return false;
+      seen.add(value);
+
+      let keys;
+      try {
+        keys = Object.getOwnPropertyNames(value).slice(0, 100);
+      } catch (_error) {
         return false;
       }
 
-      const rect = element.getBoundingClientRect?.();
-      return !!rect && rect.width > 0 && rect.height > 0;
+      for (const key of keys) {
+        if (PARALYZE_PATTERN.test(key)) {
+          const entry = safeRead(value, key);
+          if (entry === true || Number(entry) > 0 || valueLooksParalyzed(entry, depth + 1, seen)) {
+            return true;
+          }
+        }
+      }
+
+      const likelyKeys = [
+        "name", "type", "condition", "conditionName", "status", "state",
+        "effect", "effects", "conditions", "debuffs", "buffs", "flags",
+        "activeConditions", "conditionList", "conditionMap"
+      ];
+      for (const key of likelyKeys) {
+        const entry = safeRead(value, key);
+        if (valueLooksParalyzed(entry, depth + 1, seen)) return true;
+      }
+
+      if (value instanceof Map) {
+        for (const [key, entry] of value.entries()) {
+          if (valueLooksParalyzed(key, depth + 1, seen) || valueLooksParalyzed(entry, depth + 1, seen)) return true;
+        }
+      } else if (value instanceof Set || Array.isArray(value)) {
+        for (const entry of value) {
+          if (valueLooksParalyzed(entry, depth + 1, seen)) return true;
+        }
+      }
+
+      return false;
     }
 
-    function readElementSignals(element) {
-      if (!(element instanceof Element)) return "";
+    function runtimeLooksParalyzed() {
+      for (const player of getPlayerCandidates()) {
+        const directFlags = [
+          "paralyzed", "paralysed", "isParalyzed", "isParalysed",
+          "hasParalyze", "hasParalysis", "slowed", "isSlowed"
+        ];
+        for (const key of directFlags) {
+          const value = safeRead(player, key);
+          try {
+            const active = typeof value === "function" ? value.call(player) : value;
+            if (active === true || Number(active) > 0) {
+              state.detectionSource = `player:${key}`;
+              return true;
+            }
+          } catch (_error) {
+            // Continue through remaining detection methods.
+          }
+        }
 
+        const conditionSources = [
+          safeRead(player, "conditions"),
+          safeRead(player, "condition"),
+          safeRead(player, "effects"),
+          safeRead(player, "statusEffects"),
+          safeRead(player, "debuffs"),
+          safeRead(player, "states"),
+          player,
+        ];
+        for (const source of conditionSources) {
+          if (valueLooksParalyzed(source)) {
+            state.detectionSource = "player-runtime";
+            return true;
+          }
+        }
+
+        const currentSpeed = Number(
+          safeRead(player, "speed") ?? safeRead(player, "currentSpeed") ??
+          safeRead(player, "movementSpeed") ?? safeRead(player, "walkSpeed")
+        );
+        const normalSpeed = Number(
+          safeRead(player, "baseSpeed") ?? safeRead(player, "normalSpeed") ??
+          safeRead(player, "defaultSpeed") ?? safeRead(player, "originalSpeed")
+        );
+        if (Number.isFinite(currentSpeed) && Number.isFinite(normalSpeed) && normalSpeed > 0) {
+          const reduction = normalSpeed - currentSpeed;
+          if (reduction >= 10 || currentSpeed / normalSpeed <= 0.92) {
+            state.detectionSource = `speed:${currentSpeed}/${normalSpeed}`;
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    function elementSignals(element) {
+      if (!(element instanceof Element) || element.closest("#minibia-bot-panel")) return "";
       const values = [
+        element.id,
+        element.className,
         element.getAttribute("title"),
         element.getAttribute("aria-label"),
         element.getAttribute("alt"),
+        element.getAttribute("name"),
         element.getAttribute("data-condition"),
         element.getAttribute("data-status"),
         element.getAttribute("data-effect"),
         element.getAttribute("data-tooltip"),
-        element.getAttribute("name"),
-        element.id,
-        element.className,
-        element.textContent,
+        element.getAttribute("src"),
+        element.getAttribute("style"),
       ];
-
-      if (element instanceof HTMLImageElement) {
-        values.push(element.currentSrc, element.src);
-      }
-
-      const style = element.getAttribute("style");
-      if (style) values.push(style);
-
       try {
-        const backgroundImage = window.getComputedStyle(element).backgroundImage;
-        if (backgroundImage && backgroundImage !== "none") values.push(backgroundImage);
-      } catch (_error) {
-        // Ignore elements that disappear while the status window is updating.
+        values.push(window.getComputedStyle(element).backgroundImage);
+      } catch (_error) {}
+      return values.filter(Boolean).map(String).join(" ");
+    }
+
+    function domLooksParalyzed() {
+      const selector = [
+        '[title*="paraly" i]', '[aria-label*="paraly" i]', '[alt*="paraly" i]',
+        '[class*="paraly" i]', '[id*="paraly" i]', '[src*="paraly" i]',
+        '[data-condition*="paraly" i]', '[data-status*="paraly" i]',
+        '[data-effect*="paraly" i]', '[style*="paraly" i]',
+        '[title*="paralis" i]', '[aria-label*="paralis" i]', '[src*="paralis" i]'
+      ].join(",");
+
+      const direct = document.querySelector(selector);
+      if (direct && !direct.closest("#minibia-bot-panel")) {
+        state.detectedElement = direct;
+        state.detectionSource = `dom:${direct.id || direct.className || direct.tagName}`;
+        return true;
       }
 
-      return values
-        .filter((value) => value != null && value !== "")
-        .map(String)
-        .join(" ");
-    }
-
-    function looksLikeStatusContainer(element) {
-      if (!(element instanceof Element)) return false;
-      if (element.closest("#minibia-bot-panel")) return false;
-
-      const identity = [
-        element.id,
-        element.className,
-        element.getAttribute("role"),
-        element.getAttribute("aria-label"),
-        element.getAttribute("title"),
-        element.getAttribute("data-window"),
-        element.getAttribute("data-panel"),
-      ]
-        .filter(Boolean)
-        .join(" ");
-
-      return /(status|condition|effect|buff|debuff|character|state|icon)/i.test(identity);
-    }
-
-    function collectStatusRoots() {
-      const roots = new Set();
-      const selectors = [
-        '[id*="status" i]',
-        '[class*="status" i]',
-        '[id*="condition" i]',
-        '[class*="condition" i]',
-        '[id*="effect" i]',
-        '[class*="effect" i]',
-        '[id*="buff" i]',
-        '[class*="buff" i]',
-        '[id*="debuff" i]',
-        '[class*="debuff" i]',
-        '[aria-label*="status" i]',
-        '[title*="status" i]',
-        '[data-window*="status" i]',
-        '[data-panel*="status" i]',
-      ];
-
-      document.querySelectorAll(selectors.join(",")).forEach((element) => {
-        if (looksLikeStatusContainer(element) && isVisible(element)) roots.add(element);
-      });
-
-      // Some clients use a generic window with a heading such as “Status”.
-      document.querySelectorAll("div, section, aside, ul").forEach((element) => {
-        if (!isVisible(element)) return;
-        const ownLabel = [
-          element.getAttribute("aria-label"),
-          element.getAttribute("title"),
-          element.firstElementChild?.textContent,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .trim();
-        if (/^(character\s+)?status(?:\s+effects?)?$/i.test(ownLabel)) roots.add(element);
-      });
-
-      return [...roots];
-    }
-
-    function findParalyzeInStatusWindow() {
-      const roots = collectStatusRoots();
-
-      for (const root of roots) {
-        const candidates = [root, ...root.querySelectorAll("[title], [aria-label], [alt], [data-condition], [data-status], [data-effect], [data-tooltip], img, span, div")];
-        for (const element of candidates) {
-          if (!isVisible(element)) continue;
-          const signals = readElementSignals(element);
-          if (!PARALYZE_PATTERN.test(signals)) continue;
-
+      const likelyIcons = document.querySelectorAll("img, [style*='background'], [class*='icon' i], [class*='condition' i], [class*='status' i]");
+      for (const element of likelyIcons) {
+        if (PARALYZE_PATTERN.test(elementSignals(element))) {
           state.detectedElement = element;
-          state.detectionSource = `status-window:${element.id || element.className || element.tagName}`;
+          state.detectionSource = `dom-signal:${element.id || element.className || element.tagName}`;
           return true;
         }
       }
-
       state.detectedElement = null;
       return false;
     }
 
     function isParalyzedActive() {
       state.detectionSource = null;
-
-      if (!state.statusDirty) return state.cachedParalyzed;
-
-      state.cachedParalyzed = findParalyzeInStatusWindow();
-      state.statusDirty = false;
-      return state.cachedParalyzed;
+      return runtimeLooksParalyzed() || domLooksParalyzed();
     }
 
     function shouldPrioritizeHeal() {
@@ -181,7 +217,6 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       const stats = bot.heal?.readStats?.();
       const hp = Number(stats?.hp?.current);
       const minHp = Math.max(0, Number(bot.heal?.config?.minHp) || 0);
-
       return !!healStatus?.running && Number.isFinite(hp) && hp > 0 && hp <= minHp;
     }
 
@@ -209,47 +244,17 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       return sent;
     }
 
-    function scheduleNextTick() {
-      if (!state.running) return;
-      state.timerId = window.setTimeout(tick, Math.max(25, Number(config.tickMs) || 50));
-    }
-
     function tick() {
       if (!state.running) return;
       try {
-        // Re-scan each tick even if the client changes an existing icon without adding a DOM node.
-        state.statusDirty = true;
         tryAntiParalyze();
       } catch (error) {
-        bot.log("anti-paralyze status-window tick failed", error?.message || error);
+        bot.log("anti-paralyze runtime detection failed", error?.message || error);
       } finally {
-        scheduleNextTick();
+        if (state.running) {
+          state.timerId = window.setTimeout(tick, Math.max(25, Number(config.tickMs) || 50));
+        }
       }
-    }
-
-    function startObserver() {
-      if (state.observer || !document.documentElement) return;
-      state.observer = new MutationObserver(() => {
-        state.statusDirty = true;
-      });
-      state.observer.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        characterData: true,
-        attributeFilter: [
-          "class",
-          "style",
-          "title",
-          "aria-label",
-          "alt",
-          "src",
-          "data-condition",
-          "data-status",
-          "data-effect",
-          "data-tooltip",
-        ],
-      });
     }
 
     function start(overrides = {}) {
@@ -258,24 +263,16 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       persistConfig();
       if (state.running) return false;
       state.running = true;
-      state.statusDirty = true;
-      startObserver();
       tick();
-      bot.log("anti-paralyze status-window monitor started", { ...config });
+      bot.log("anti-paralyze runtime monitor started", { ...config });
       return true;
     }
 
     function stop(options = {}) {
       state.running = false;
-      state.cachedParalyzed = false;
-      state.detectedElement = null;
       if (state.timerId != null) {
         window.clearTimeout(state.timerId);
         state.timerId = null;
-      }
-      if (state.observer) {
-        state.observer.disconnect();
-        state.observer = null;
       }
       if (options.persistEnabled !== false) {
         config.enabled = false;
@@ -294,7 +291,6 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
     }
 
     function status() {
-      state.statusDirty = true;
       const paralyzed = isParalyzedActive();
       return {
         running: state.running,
@@ -324,23 +320,19 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
       config,
     };
     bot.__antiParalyzeHotfixInstalled = true;
+    bot.__antiParalyzeRuntimeFixInstalled = true;
 
-    bot.addCleanup?.(() => {
-      if (state.timerId != null) window.clearTimeout(state.timerId);
-      state.observer?.disconnect?.();
-      state.running = false;
-    });
+    bot.addCleanup?.(() => stop({ persistEnabled: false }));
 
     if (config.enabled) start();
-    bot.log("anti-paralyze status-window detection installed");
+    bot.log("anti-paralyze runtime detection installed");
     return true;
   }
 
   let attempts = 0;
   const timerId = window.setInterval(() => {
     attempts += 1;
-    const bot = window.minibiaBot;
-    if (install(bot) || attempts >= MAX_INSTALL_ATTEMPTS) {
+    if (install(window.minibiaBot) || attempts >= MAX_INSTALL_ATTEMPTS) {
       window.clearInterval(timerId);
     }
   }, INSTALL_RETRY_MS);
