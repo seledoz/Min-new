@@ -42,6 +42,7 @@
     "src/modules/panel-scroll.js",
     "src/modules/github-waypoint-library.js",
     "src/main.js",
+    "src/modules/anti-paralyze-toggle-fix.js",
     "src/modules/player-screen-alert.js",
     "src/modules/auto-attack-keep-distance.js",
     "src/modules/auto-attack-keep-distance-bootstrap.js",
