@@ -10,6 +10,7 @@
     "src/modules/panic.js",
     "src/modules/rune.js",
     "src/modules/heal.js",
+    "src/modules/anti-paralyze.js",
     "src/modules/damage-tts-alert.js",
     "src/modules/auto-invisible.js",
     "src/modules/auto-magic-shield.js",
