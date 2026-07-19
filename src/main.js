@@ -4,6 +4,7 @@
     ["rune", "minibiaBot.rune.config"],
     ["heal", "minibiaBot.heal.config"],
     ["antiParalyze", "minibiaBot.antiParalyzeV2.config"],
+    ["autoHaste", "minibiaBot.autoHaste.config"],
     ["damageTtsAlert", "minibiaBot.damageTtsAlert.config"],
     ["invisible", "minibiaBot.invisible.config"],
     ["magicShield", "minibiaBot.magicShield.config"],
@@ -73,6 +74,7 @@
     currentBundle.installRuneModule(bot);
     currentBundle.installHealModule(bot);
     currentBundle.installAntiParalyzeModule?.(bot);
+    currentBundle.installAutoHasteModule?.(bot);
     currentBundle.installDamageTtsAlertModule?.(bot);
     currentBundle.installAutoInvisibleModule(bot);
     currentBundle.installAutoMagicShieldModule(bot);
@@ -114,6 +116,7 @@
       rune: bot.rune.status(),
       heal: bot.heal.status(),
       antiParalyze: bot.antiParalyze?.status?.() || null,
+      autoHaste: bot.autoHaste?.status?.() || null,
       damageTtsAlert: bot.damageTtsAlert?.status?.() || null,
       invisible: bot.invisible.status(),
       magicShield: bot.magicShield.status(),
@@ -142,7 +145,7 @@
       branch: bot.version.branch,
       commit: bot.version.commit,
       buildDate: bot.version.date,
-      modules: ["pz", "xray", "panic", "rune", "heal", "antiParalyze", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackPriority", "attackAoe", "greatFireballV2", "lureMode", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "runeMakerDrop", "ui"],
+      modules: ["pz", "xray", "panic", "rune", "heal", "antiParalyze", "autoHaste", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackPriority", "attackAoe", "greatFireballV2", "lureMode", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "runeMakerDrop", "ui"],
     });
     console.log("minibiaBot.reload()");
     console.log("minibiaBot.attackExclude.addName(\"monster name\")");
