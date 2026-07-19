@@ -20,6 +20,7 @@
     ["mining", "minibiaBot.mining.config"],
     ["eat", "minibiaBot.eat.config"],
     ["talk", "minibiaBot.talk.config"],
+    ["runeMakerDrop", "minibiaBot.runeMakerDrop.config"],
   ];
 
   function getPersistedEnabledSnapshot(bot) {
@@ -91,6 +92,7 @@
     currentBundle.installCaveWaypointActionsModule?.(bot);
 
     bot.ui.inject();
+    currentBundle.installRuneMakerDropModule?.(bot);
     currentBundle.installAutoAttackPriorityModule?.(bot);
     currentBundle.installGreatFireballV2Module?.(bot);
     currentBundle.installLureModeModule?.(bot);
@@ -130,6 +132,7 @@
       mining: bot.mining?.status?.() || null,
       eat: bot.eat.status(),
       talk: bot.talk.status(),
+      runeMakerDrop: bot.runeMakerDrop?.status?.() || null,
     });
 
     window.minibiaBot = bot;
@@ -139,7 +142,7 @@
       branch: bot.version.branch,
       commit: bot.version.commit,
       buildDate: bot.version.date,
-      modules: ["pz", "xray", "panic", "rune", "heal", "antiParalyze", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackPriority", "attackAoe", "greatFireballV2", "lureMode", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "ui"],
+      modules: ["pz", "xray", "panic", "rune", "heal", "antiParalyze", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackPriority", "attackAoe", "greatFireballV2", "lureMode", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "runeMakerDrop", "ui"],
     });
     console.log("minibiaBot.reload()");
     console.log("minibiaBot.attackExclude.addName(\"monster name\")");
