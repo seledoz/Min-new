@@ -6,6 +6,9 @@ window.__minibiaBotBundle.installAutoEatModule = function installAutoEatModule(b
     running: false,
     timerId: null,
     lastFoodAt: 0,
+    eatAtSecondsRemaining: null,
+    lastObservedFoodSeconds: null,
+    waitingForTimerReset: false,
   };
 
   const config = Object.assign(
@@ -69,12 +72,58 @@ window.__minibiaBotBundle.installAutoEatModule = function installAutoEatModule(b
     return true;
   }
 
+  function chooseRandomEatTime(maxSeconds = 300) {
+    const maximum = Math.max(0, Math.min(300, Math.trunc(Number(maxSeconds) || 0)));
+    state.eatAtSecondsRemaining = Math.floor(Math.random() * (maximum + 1));
+    bot.log("auto eat random time selected", {
+      secondsRemaining: state.eatAtSecondsRemaining,
+    });
+    return state.eatAtSecondsRemaining;
+  }
+
+  function updateRandomEatTarget(foodSeconds) {
+    const previousSeconds = state.lastObservedFoodSeconds;
+    const timerRefilled =
+      previousSeconds != null && foodSeconds > previousSeconds + 5;
+
+    if (state.waitingForTimerReset) {
+      if (!timerRefilled && foodSeconds <= 300) {
+        state.lastObservedFoodSeconds = foodSeconds;
+        return false;
+      }
+
+      state.waitingForTimerReset = false;
+      state.eatAtSecondsRemaining = null;
+    }
+
+    if (timerRefilled) {
+      state.eatAtSecondsRemaining = null;
+    }
+
+    if (state.eatAtSecondsRemaining == null) {
+      chooseRandomEatTime(Math.min(300, foodSeconds));
+    }
+
+    state.lastObservedFoodSeconds = foodSeconds;
+    return true;
+  }
+
   function tryEat() {
     if (!config.enabled) {
       return false;
     }
 
-    if (isSated()) {
+    const food = readFoodTimer();
+
+    if (food?.seconds != null) {
+      if (!updateRandomEatTarget(food.seconds)) {
+        return false;
+      }
+
+      if (food.seconds > state.eatAtSecondsRemaining) {
+        return false;
+      }
+    } else if (isSated()) {
       return false;
     }
 
@@ -92,7 +141,9 @@ window.__minibiaBotBundle.installAutoEatModule = function installAutoEatModule(b
 
     if (clicked) {
       state.lastFoodAt = Date.now();
-      bot.log("used eat hotkey", { slot });
+      state.waitingForTimerReset = true;
+      state.eatAtSecondsRemaining = null;
+      bot.log("used eat hotkey", { slot, foodTimer: food?.text || null });
     }
 
     return clicked;
@@ -129,6 +180,9 @@ window.__minibiaBotBundle.installAutoEatModule = function installAutoEatModule(b
     }
 
     state.running = true;
+    state.eatAtSecondsRemaining = null;
+    state.lastObservedFoodSeconds = null;
+    state.waitingForTimerReset = false;
     bot.log("auto eat started", { eatCooldownMs: config.eatCooldownMs, eatHotbarSlot: config.eatHotbarSlot });
     tick();
     return true;
@@ -143,6 +197,10 @@ window.__minibiaBotBundle.installAutoEatModule = function installAutoEatModule(b
       state.timerId = null;
     }
 
+    state.eatAtSecondsRemaining = null;
+    state.lastObservedFoodSeconds = null;
+    state.waitingForTimerReset = false;
+
     if (shouldPersistEnabled) {
       config.enabled = false;
       persistConfig();
@@ -156,6 +214,8 @@ window.__minibiaBotBundle.installAutoEatModule = function installAutoEatModule(b
       running: state.running,
       config: { ...config },
       lastFoodAt: state.lastFoodAt,
+      eatAtSecondsRemaining: state.eatAtSecondsRemaining,
+      waitingForTimerReset: state.waitingForTimerReset,
       isSated: isSated(),
     };
   }
