@@ -4,7 +4,25 @@
   if (typeof install !== "function") return;
 
   function installOnBot(bot) {
-    if (!bot || bot.runeMakerDrop) return bot;
+    if (!bot) return bot;
+
+    // The panel is rebuilt during reloads, but the existing runeMakerDrop
+    // object can survive long enough for this bootstrap to skip installation.
+    // Stop that stale instance and reinstall it so its UI injection loop runs
+    // again and restores the Rune Maker Drop section.
+    if (bot.runeMakerDrop) {
+      try {
+        bot.runeMakerDrop.stop?.({ persistEnabled: false });
+      } catch (_) {
+        // Continue with a fresh installation even if the stale instance fails.
+      }
+      try {
+        delete bot.runeMakerDrop;
+      } catch (_) {
+        bot.runeMakerDrop = null;
+      }
+    }
+
     install(bot);
     bot.addCleanup?.(() => bot.runeMakerDrop?.stop?.({ persistEnabled: false }));
     return bot;
