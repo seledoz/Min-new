@@ -6,7 +6,7 @@ window.__minibiaBotBundle.installAutoAttackKeepDistanceModule = function install
     {
       enabled: false,
       distance: 3,
-      tickMs: 250,
+      tickMs: 200,
     },
     bot.storage.get(configStorageKey, {}) || {}
   );
@@ -16,6 +16,7 @@ window.__minibiaBotBundle.installAutoAttackKeepDistanceModule = function install
     previousMeleeMode: null,
     lastMoveAt: 0,
     lastDestinationKey: null,
+    lastTargetId: null,
   };
 
   function persistConfig() {
@@ -68,35 +69,44 @@ window.__minibiaBotBundle.installAutoAttackKeepDistanceModule = function install
     }
   }
 
-  function getRingCandidates(targetPosition, desiredDistance) {
+  function getRetreatCandidates(playerPosition, targetPosition) {
     const candidates = [];
-    for (let dx = -desiredDistance; dx <= desiredDistance; dx += 1) {
-      for (let dy = -desiredDistance; dy <= desiredDistance; dy += 1) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) !== desiredDistance) continue;
-        candidates.push({
-          x: targetPosition.x + dx,
-          y: targetPosition.y + dy,
-          z: targetPosition.z,
-        });
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        if (dx === 0 && dy === 0) continue;
+        const candidate = {
+          x: playerPosition.x + dx,
+          y: playerPosition.y + dy,
+          z: playerPosition.z,
+        };
+        if (!canReach(playerPosition, candidate)) continue;
+        candidates.push(candidate);
       }
     }
-    return candidates;
+
+    return candidates.sort((left, right) => {
+      const leftDistance = getTileDistance(left, targetPosition);
+      const rightDistance = getTileDistance(right, targetPosition);
+      if (rightDistance !== leftDistance) return rightDistance - leftDistance;
+
+      const leftAxisGain =
+        Math.abs(left.x - targetPosition.x) + Math.abs(left.y - targetPosition.y);
+      const rightAxisGain =
+        Math.abs(right.x - targetPosition.x) + Math.abs(right.y - targetPosition.y);
+      return rightAxisGain - leftAxisGain;
+    });
   }
 
-  function findBestDistancePosition(playerPosition, targetPosition, desiredDistance) {
-    return getRingCandidates(targetPosition, desiredDistance)
-      .filter((candidate) => canReach(playerPosition, candidate))
-      .sort((left, right) => {
-        const leftTravel = getTileDistance(playerPosition, left);
-        const rightTravel = getTileDistance(playerPosition, right);
-        return leftTravel - rightTravel;
-      })[0] || null;
+  function findBestRetreatPosition(playerPosition, targetPosition, currentDistance) {
+    const candidates = getRetreatCandidates(playerPosition, targetPosition);
+    return candidates.find((candidate) => getTileDistance(candidate, targetPosition) > currentDistance) || null;
   }
 
   function moveTo(position, now = Date.now()) {
     if (!position || typeof Position !== "function") return false;
     const destinationKey = `${position.x},${position.y},${position.z}`;
-    if (state.lastDestinationKey === destinationKey && now - state.lastMoveAt < 750) return false;
+    if (state.lastDestinationKey === destinationKey && now - state.lastMoveAt < 450) return false;
+    if (now - state.lastMoveAt < 180) return false;
 
     try {
       clearFollowTarget();
@@ -135,33 +145,47 @@ window.__minibiaBotBundle.installAutoAttackKeepDistanceModule = function install
     const target = bot.attack?.getCurrentTarget?.() || window.gameClient?.player?.__target || null;
     const playerPosition = normalizePosition(bot.getPlayerPosition?.());
     const targetPosition = normalizePosition(target?.getPosition?.() || target?.__position);
-    if (!target || !playerPosition || !targetPosition || playerPosition.z !== targetPosition.z) return;
+    if (!target || !playerPosition || !targetPosition || playerPosition.z !== targetPosition.z) {
+      state.lastTargetId = null;
+      state.lastDestinationKey = null;
+      return;
+    }
+
+    if (state.lastTargetId !== target.id) {
+      state.lastTargetId = target.id;
+      state.lastDestinationKey = null;
+    }
 
     const desiredDistance = Math.max(1, Math.min(7, Math.trunc(Number(config.distance) || 3)));
     const currentDistance = getTileDistance(playerPosition, targetPosition);
 
-    if (currentDistance === desiredDistance) {
+    // Never run toward a target in keep-distance mode. At or beyond the selected
+    // range, hold position and let the target approach.
+    if (currentDistance >= desiredDistance) {
       clearFollowTarget();
       state.lastDestinationKey = null;
       return;
     }
 
-    const destination = findBestDistancePosition(playerPosition, targetPosition, desiredDistance);
+    // Too close: move only one square at a time, directly increasing distance.
+    const destination = findBestRetreatPosition(playerPosition, targetPosition, currentDistance);
     if (destination) {
       moveTo(destination);
-      bot.logDebug?.("maintaining auto attack distance", {
+      bot.logDebug?.("retreating from auto attack target", {
         targetId: target.id,
         targetName: target.name || "Mob",
         desiredDistance,
         currentDistance,
         destination,
       });
+    } else {
+      clearFollowTarget();
     }
   }
 
   function schedule() {
     window.clearInterval(state.timerId);
-    state.timerId = window.setInterval(tick, Math.max(100, Number(config.tickMs) || 250));
+    state.timerId = window.setInterval(tick, Math.max(100, Number(config.tickMs) || 200));
   }
 
   function updateConfig(nextConfig = {}) {
@@ -179,7 +203,12 @@ window.__minibiaBotBundle.installAutoAttackKeepDistanceModule = function install
   }
 
   function status() {
-    return { config: { ...config }, lastMoveAt: state.lastMoveAt, lastDestinationKey: state.lastDestinationKey };
+    return {
+      config: { ...config },
+      lastMoveAt: state.lastMoveAt,
+      lastDestinationKey: state.lastDestinationKey,
+      lastTargetId: state.lastTargetId,
+    };
   }
 
   function refreshUi() {
