@@ -48,7 +48,6 @@
     "src/modules/auto-attack-keep-distance-bootstrap.js",
     "src/modules/great-fireball-v2-screen-click-fix.js",
     "src/modules/xray-overlay-floor-mode.js",
-    "src/modules/rune-maker-drop-bootstrap.js",
     "src/modules/rune-maker-drop-inspector.js",
   ];
 
