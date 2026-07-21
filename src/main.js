@@ -62,6 +62,90 @@
     return !!debugLabel;
   }
 
+  function installPauseBreakToggle(bot) {
+    let paused = false;
+    let resumeSnapshot = { cave: false, attack: false };
+
+    function isTypingTarget(target) {
+      if (!(target instanceof Element)) return false;
+      if (target.closest("input, textarea, select, [contenteditable=\"true\"]")) return true;
+      return false;
+    }
+
+    function updatePanelState() {
+      const panel = document.getElementById("minibia-bot-panel");
+      if (!panel) return;
+      panel.dataset.pauseBreakPaused = paused ? "true" : "false";
+      panel.style.outline = paused ? "3px solid #d93025" : "";
+      panel.title = paused ? "PAUSED — press Pause/Break to resume Cavebot and Auto Attack" : "";
+    }
+
+    function pause() {
+      if (paused) return false;
+
+      resumeSnapshot = {
+        cave: !!bot.cave?.status?.().running,
+        attack: !!bot.attack?.status?.().running,
+      };
+
+      if (resumeSnapshot.cave) {
+        bot.cave.stop({ persistEnabled: false });
+      }
+      if (resumeSnapshot.attack) {
+        bot.attack.stop({ persistEnabled: false });
+      }
+
+      paused = true;
+      updatePanelState();
+      bot.log("Pause/Break paused Cavebot and Auto Attack", { ...resumeSnapshot });
+      return true;
+    }
+
+    function resume() {
+      if (!paused) return false;
+
+      const snapshot = { ...resumeSnapshot };
+      paused = false;
+      resumeSnapshot = { cave: false, attack: false };
+
+      if (snapshot.cave) {
+        bot.cave?.start?.();
+      }
+      if (snapshot.attack) {
+        bot.attack?.start?.();
+      }
+
+      updatePanelState();
+      bot.log("Pause/Break resumed Cavebot and Auto Attack", snapshot);
+      return true;
+    }
+
+    function toggle() {
+      return paused ? resume() : pause();
+    }
+
+    function onKeyDown(event) {
+      const isPauseBreak = event.key === "Pause" || event.code === "Pause" || event.keyCode === 19;
+      if (!isPauseBreak || event.repeat || isTypingTarget(event.target)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      toggle();
+    }
+
+    document.addEventListener("keydown", onKeyDown, true);
+    bot.addCleanup(() => document.removeEventListener("keydown", onKeyDown, true));
+
+    bot.pauseBreak = {
+      pause,
+      resume,
+      toggle,
+      status: () => ({ paused, resumeSnapshot: { ...resumeSnapshot } }),
+    };
+
+    updatePanelState();
+  }
+
   function boot(currentBundle = bundle) {
     const previousEnabledSnapshot = getPersistedEnabledSnapshot(window.minibiaBot);
     if (window.minibiaBot?.destroy) window.minibiaBot.destroy();
@@ -94,6 +178,7 @@
     currentBundle.installCaveWaypointActionsModule?.(bot);
 
     bot.ui.inject();
+    installPauseBreakToggle(bot);
     currentBundle.installRuneMakerDropModule?.(bot);
     currentBundle.installAutoAttackPriorityModule?.(bot);
     currentBundle.installGreatFireballV2Module?.(bot);
@@ -136,6 +221,7 @@
       eat: bot.eat.status(),
       talk: bot.talk.status(),
       runeMakerDrop: bot.runeMakerDrop?.status?.() || null,
+      pauseBreak: bot.pauseBreak?.status?.() || null,
     });
 
     window.minibiaBot = bot;
@@ -145,7 +231,7 @@
       branch: bot.version.branch,
       commit: bot.version.commit,
       buildDate: bot.version.date,
-      modules: ["pz", "xray", "panic", "rune", "heal", "antiParalyze", "autoHaste", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackPriority", "attackAoe", "greatFireballV2", "lureMode", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "runeMakerDrop", "ui"],
+      modules: ["pz", "xray", "panic", "rune", "heal", "antiParalyze", "autoHaste", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackPriority", "attackAoe", "greatFireballV2", "lureMode", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "runeMakerDrop", "pauseBreak", "ui"],
     });
     console.log("minibiaBot.reload()");
     console.log("minibiaBot.attackExclude.addName(\"monster name\")");
@@ -166,6 +252,7 @@
     console.log("minibiaBot.damageTtsAlert.stop()");
     console.log("minibiaBot.mining.start({ pickHotbarSlot: 5 })");
     console.log("minibiaBot.mining.stop()");
+    console.log("minibiaBot.pauseBreak.toggle()");
     return bot;
   }
 
