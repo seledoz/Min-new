@@ -8,6 +8,7 @@
     "src/modules/pz.js",
     "src/modules/xray.js",
     "src/modules/panic.js",
+    "src/modules/gm-default-chat-kill-switch.js",
     "src/modules/rune.js",
     "src/modules/heal.js",
     "src/modules/anti-paralyze.js",
