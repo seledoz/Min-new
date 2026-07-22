@@ -155,6 +155,7 @@
     currentBundle.installPzModule(bot);
     currentBundle.installXrayModule(bot);
     currentBundle.installPanicModule(bot);
+    currentBundle.installGmDefaultChatKillSwitch?.(bot);
     currentBundle.installRuneModule(bot);
     currentBundle.installHealModule(bot);
     currentBundle.installAntiParalyzeModule?.(bot);
@@ -198,6 +199,7 @@
       pz: { home: bot.pz.getHomePz() },
       xray: bot.xray.status(),
       panic: bot.panic.status(),
+      gmDefaultChatKillSwitch: bot.gmDefaultChatKillSwitch?.status?.() || null,
       rune: bot.rune.status(),
       heal: bot.heal.status(),
       antiParalyze: bot.antiParalyze?.status?.() || null,
@@ -231,7 +233,7 @@
       branch: bot.version.branch,
       commit: bot.version.commit,
       buildDate: bot.version.date,
-      modules: ["pz", "xray", "panic", "rune", "heal", "antiParalyze", "autoHaste", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackPriority", "attackAoe", "greatFireballV2", "lureMode", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "runeMakerDrop", "pauseBreak", "ui"],
+      modules: ["pz", "xray", "panic", "gmDefaultChatKillSwitch", "rune", "heal", "antiParalyze", "autoHaste", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackPriority", "attackAoe", "greatFireballV2", "lureMode", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "runeMakerDrop", "pauseBreak", "ui"],
     });
     console.log("minibiaBot.reload()");
     console.log("minibiaBot.attackExclude.addName(\"monster name\")");
