@@ -197,7 +197,7 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
   function syncUi() {
     const toggle = document.getElementById("minibia-bot-auto-haste-enabled");
     const spellInput = document.getElementById("minibia-bot-auto-haste-spell");
-    if (toggle) toggle.checked = state.running;
+    if (toggle) toggle.checked = state.running && config.enabled;
     if (spellInput && document.activeElement !== spellInput) spellInput.value = config.spellWords || "";
   }
 
@@ -224,12 +224,10 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
 
   function stop(options = {}) {
     state.running = false;
+    config.enabled = false;
     state.assumedActiveUntil = 0;
     clearTimer();
-    if (options.persistEnabled !== false) {
-      config.enabled = false;
-      persistConfig();
-    }
+    if (options.persistEnabled !== false) persistConfig();
     syncUi();
     bot.log("auto haste stopped");
     return true;
@@ -277,17 +275,21 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
     const toggle = wrapper.querySelector("#minibia-bot-auto-haste-enabled");
     const spellInput = wrapper.querySelector("#minibia-bot-auto-haste-spell");
     spellInput.value = config.spellWords || "";
-    toggle.checked = state.running;
-    spellInput.addEventListener("change", () => updateConfig({ spellWords: spellInput.value }));
-    toggle.addEventListener("change", () => {
-      const shouldEnable = toggle.checked;
+    toggle.checked = state.running && config.enabled;
+    spellInput.addEventListener("change", () => {
+      config.spellWords = String(spellInput.value || "").trim();
+      persistConfig();
+    });
+    toggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       const spellWords = String(spellInput.value || "").trim();
-      if (shouldEnable) {
-        updateConfig({ spellWords });
-        start({ spellWords });
-      } else {
+      if (state.running || config.enabled) {
         config.spellWords = spellWords;
         stop();
+      } else {
+        updateConfig({ spellWords });
+        start({ spellWords });
       }
       syncUi();
     });
