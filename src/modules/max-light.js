@@ -3,6 +3,7 @@ window.__minibiaBotBundle = window.__minibiaBotBundle || {};
 window.__minibiaBotBundle.installMaxLightModule = function installMaxLightModule(bot) {
   const configStorageKey = "minibiaBot.maxLight.config";
   const styleId = "minibia-bot-max-light-style";
+  const controlsId = "minibia-bot-max-light-section";
 
   const config = Object.assign(
     {
@@ -70,10 +71,21 @@ window.__minibiaBotBundle.installMaxLightModule = function installMaxLightModule
     });
   }
 
+  function refreshControls() {
+    const enabledInput = document.getElementById("minibia-bot-max-light-enabled");
+    const brightnessInput = document.getElementById("minibia-bot-max-light-brightness");
+    const contrastInput = document.getElementById("minibia-bot-max-light-contrast");
+
+    if (enabledInput) enabledInput.checked = !!config.enabled;
+    if (brightnessInput && document.activeElement !== brightnessInput) brightnessInput.value = String(config.brightness);
+    if (contrastInput && document.activeElement !== contrastInput) contrastInput.value = String(config.contrast);
+  }
+
   function apply() {
     ensureStyle();
     markGameCanvases();
     document.documentElement.dataset.minibiaMaxLight = config.enabled ? "true" : "false";
+    refreshControls();
   }
 
   function updateConfig(nextConfig = {}) {
@@ -99,8 +111,57 @@ window.__minibiaBotBundle.installMaxLightModule = function installMaxLightModule
     return updateConfig({ enabled: !config.enabled });
   }
 
+  function injectControls() {
+    if (document.getElementById(controlsId)) {
+      refreshControls();
+      return true;
+    }
+
+    const mainColumn = document.querySelector("#minibia-bot-panel .mb-main-column");
+    if (!mainColumn) return false;
+
+    const section = document.createElement("div");
+    section.id = controlsId;
+    section.className = "mb-section mb-column-section";
+    section.innerHTML = `
+      <div class="mb-label">Max Light</div>
+      <div class="mb-stack">
+        <label class="mb-toggle">
+          <input type="checkbox" id="minibia-bot-max-light-enabled" />
+          <span>Enable Max Light</span>
+        </label>
+        <div class="mb-field-grid">
+          <label class="mb-field" for="minibia-bot-max-light-brightness">
+            <span class="mb-field-label">Brightness</span>
+            <input type="number" id="minibia-bot-max-light-brightness" min="1" max="3" step="0.05" />
+          </label>
+          <label class="mb-field" for="minibia-bot-max-light-contrast">
+            <span class="mb-field-label">Contrast</span>
+            <input type="number" id="minibia-bot-max-light-contrast" min="0.5" max="2" step="0.05" />
+          </label>
+        </div>
+      </div>
+    `;
+
+    mainColumn.appendChild(section);
+
+    section.querySelector("#minibia-bot-max-light-enabled")?.addEventListener("change", (event) => {
+      updateConfig({ enabled: !!event.target.checked });
+    });
+    section.querySelector("#minibia-bot-max-light-brightness")?.addEventListener("change", (event) => {
+      updateConfig({ brightness: event.target.value });
+    });
+    section.querySelector("#minibia-bot-max-light-contrast")?.addEventListener("change", (event) => {
+      updateConfig({ contrast: event.target.value });
+    });
+
+    refreshControls();
+    return true;
+  }
+
   const observer = new MutationObserver(() => {
     if (config.enabled) markGameCanvases();
+    injectControls();
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
@@ -111,6 +172,7 @@ window.__minibiaBotBundle.installMaxLightModule = function installMaxLightModule
       canvas.removeAttribute("data-minibia-max-light-target");
     });
     document.getElementById(styleId)?.remove();
+    document.getElementById(controlsId)?.remove();
   });
 
   bot.maxLight = {
@@ -118,9 +180,11 @@ window.__minibiaBotBundle.installMaxLightModule = function installMaxLightModule
     stop,
     toggle,
     updateConfig,
+    injectControls,
     config,
     status: () => ({ running: !!config.enabled, config: { ...config } }),
   };
 
   apply();
+  window.setTimeout(injectControls, 0);
 };
