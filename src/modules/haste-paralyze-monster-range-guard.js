@@ -80,6 +80,17 @@ window.__minibiaBotBundle.installHasteParalyzeMonsterRangeGuard = function insta
       return "anti-paralyze";
     }
 
+    const runeStatus = bot.rune?.status?.();
+    const runeWords = normalizeSpellWords(bot.rune?.config?.runeSpellWords);
+    if (
+      runeWords &&
+      normalizedMessage === runeWords &&
+      runeStatus?.running &&
+      bot.rune?.config?.enabled
+    ) {
+      return "magic level trainer";
+    }
+
     return null;
   }
 
@@ -113,7 +124,7 @@ window.__minibiaBotBundle.installHasteParalyzeMonsterRangeGuard = function insta
     isBlocked: () => getMonstersWithinRange().length > 0,
   };
 
-  bot.log("haste and anti-paralyze monster range guard installed", {
+  bot.log("haste, anti-paralyze, and magic trainer monster range guard installed", {
     range: MONSTER_BLOCK_RANGE,
   });
 };
