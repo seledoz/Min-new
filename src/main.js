@@ -22,6 +22,7 @@
     ["eat", "minibiaBot.eat.config"],
     ["talk", "minibiaBot.talk.config"],
     ["runeMakerDrop", "minibiaBot.runeMakerDrop.config"],
+    ["maxLight", "minibiaBot.maxLight.config"],
   ];
 
   function getPersistedEnabledSnapshot(bot) {
@@ -176,10 +177,12 @@
     currentBundle.installMiningModule?.(bot);
     currentBundle.installAutoEatModule(bot);
     currentBundle.installTalkModule(bot);
+    currentBundle.installMaxLightModule?.(bot);
     currentBundle.installPanel(bot);
     currentBundle.installCaveWaypointActionsModule?.(bot);
 
     bot.ui.inject();
+    bot.maxLight?.injectControls?.();
     installPauseBreakToggle(bot);
     currentBundle.installRuneMakerDropModule?.(bot);
     currentBundle.installAutoAttackPriorityModule?.(bot);
@@ -224,6 +227,7 @@
       eat: bot.eat.status(),
       talk: bot.talk.status(),
       runeMakerDrop: bot.runeMakerDrop?.status?.() || null,
+      maxLight: bot.maxLight?.status?.() || null,
       pauseBreak: bot.pauseBreak?.status?.() || null,
     });
 
@@ -234,7 +238,7 @@
       branch: bot.version.branch,
       commit: bot.version.commit,
       buildDate: bot.version.date,
-      modules: ["pz", "xray", "panic", "gmDefaultChatKillSwitch", "rune", "heal", "antiParalyze", "autoHaste", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackPriority", "attackAoe", "greatFireballV2", "lureMode", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "runeMakerDrop", "pauseBreak", "ui"],
+      modules: ["pz", "xray", "panic", "gmDefaultChatKillSwitch", "rune", "heal", "antiParalyze", "autoHaste", "damageTtsAlert", "invisible", "magicShield", "attack", "attackExclude", "attackPriority", "attackAoe", "greatFireballV2", "lureMode", "redTextAlert", "cave", "caveForwardLoop", "caveArrowKeys", "caveWaypointActions", "githubWaypointLibrary", "equipRing", "mining", "eat", "talk", "runeMakerDrop", "maxLight", "pauseBreak", "ui"],
     });
     console.log("minibiaBot.reload()");
     console.log("minibiaBot.attackExclude.addName(\"monster name\")");
@@ -255,6 +259,7 @@
     console.log("minibiaBot.damageTtsAlert.stop()");
     console.log("minibiaBot.mining.start({ pickHotbarSlot: 5 })");
     console.log("minibiaBot.mining.stop()");
+    console.log("minibiaBot.maxLight.toggle()");
     console.log("minibiaBot.pauseBreak.toggle()");
     return bot;
   }
