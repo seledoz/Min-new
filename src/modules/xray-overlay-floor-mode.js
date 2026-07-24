@@ -5,7 +5,7 @@
   const legacySelectId = "minibia-bot-xray-floor-select";
   const overlayId = "minibia-bot-xray-overlay";
   const statusId = "minibia-bot-xray-overlay-status";
-  const validModes = new Set(["all", "current-plus-minus-one"]);
+  const validModes = new Set(["all", "current", "current-plus-minus-one"]);
 
   function readMode() {
     try {
@@ -35,13 +35,19 @@
     return Number.isFinite(offset) ? offset : 0;
   }
 
+  function shouldShowMarker(offset) {
+    if (mode === "all") return true;
+    if (mode === "current") return offset === 0;
+    return Math.abs(offset) <= 1;
+  }
+
   function applyMarkerFilter() {
     const overlay = document.getElementById(overlayId);
     if (!overlay) return false;
 
     overlay.querySelectorAll(".mb-xray-marker").forEach((marker) => {
       const offset = markerFloorOffset(marker);
-      marker.style.display = mode === "all" || Math.abs(offset) <= 1 ? "" : "none";
+      marker.style.display = shouldShowMarker(offset) ? "" : "none";
     });
     return true;
   }
@@ -61,7 +67,11 @@
     const label = document.getElementById(statusId);
     if (!label) return;
     const enabled = !!window.minibiaBot?.xray?.status?.().config?.overlayEnabled;
-    const modeLabel = mode === "all" ? "all floors" : "current floor ±1";
+    const modeLabel = mode === "all"
+      ? "all floors"
+      : mode === "current"
+        ? "current floor"
+        : "current floor ±1";
     label.textContent = `${enabled ? "Overlay: on" : "Overlay: off"} • ${modeLabel}`;
   }
 
@@ -83,6 +93,7 @@
         <span class="mb-field-label">Overlay Floor Mode</span>
         <select id="${selectId}">
           <option value="all">All Floors</option>
+          <option value="current">Current Floor</option>
           <option value="current-plus-minus-one">Current Floor ±1</option>
         </select>`;
       status.insertAdjacentElement("afterend", control);
