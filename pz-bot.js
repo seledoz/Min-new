@@ -174,26 +174,29 @@
     if (state.energyWaveCastPending) return true;
     if (!canCastEnergyWave(now)) return false;
 
+    const slot = normalizeHotbarSlot(config.energyWaveHotbarSlot);
+    const best = getBestEnergyWaveCandidate();
+    if (!slot || !best || best.count < positiveInt(config.energyWaveMinMonsters, 3)) return false;
+
+    if (!setCurrentTarget(best.target)) {
+      bot.log("energy wave target switch failed", { target: best.target?.name || "Mob", id: best.target?.id });
+      return false;
+    }
+
+    const selectedTarget = best.target;
     state.energyWaveCastPending = true;
     state.energyWaveCastTimerId = window.setTimeout(() => {
       state.energyWaveCastPending = false;
       state.energyWaveCastTimerId = null;
 
       const castNow = Date.now();
-      if (!canCastEnergyWave(castNow)) {
+      if (!canCastEnergyWave(castNow) || !isSameCreature(getCurrentTarget(), selectedTarget)) {
         refreshUiValues();
         return;
       }
 
-      const slot = normalizeHotbarSlot(config.energyWaveHotbarSlot);
-      const best = getBestEnergyWaveCandidate();
-      if (!slot || !best || best.count < positiveInt(config.energyWaveMinMonsters, 3)) {
-        refreshUiValues();
-        return;
-      }
-
-      if (!setCurrentTarget(best.target)) {
-        bot.log("energy wave target switch failed", { target: best.target?.name || "Mob", id: best.target?.id });
+      const updated = evaluateEnergyWaveForTarget(selectedTarget);
+      if (!updated || updated.count < positiveInt(config.energyWaveMinMonsters, 3)) {
         refreshUiValues();
         return;
       }
@@ -201,9 +204,9 @@
       const clicked = bot.clickHotbar(slot - 1);
       if (clicked) {
         state.lastEnergyWaveHotkeyAt = castNow;
-        state.lastEnergyWaveMonsterCount = best.count;
-        state.lastEnergyWaveTargetName = best.target?.name || "Mob";
-        bot.log("used energy wave hotkey", { slot, monsterCount: best.count, target: state.lastEnergyWaveTargetName, direction: best.direction, shape: "1-3-3-3", castDelayMs: 150 });
+        state.lastEnergyWaveMonsterCount = updated.count;
+        state.lastEnergyWaveTargetName = selectedTarget?.name || "Mob";
+        bot.log("used energy wave hotkey", { slot, monsterCount: updated.count, target: state.lastEnergyWaveTargetName, direction: updated.direction, shape: "1-3-3-3", targetSettleDelayMs: 150 });
       }
       refreshUiValues();
     }, 150);
