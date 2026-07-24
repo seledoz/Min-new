@@ -19,13 +19,13 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
       spellWords: "",
       tickMs: 100,
       recastCooldownMs: 2100,
-      assumedActiveMs: 30000,
+      assumedActiveMs: 15000,
     },
     bot.storage.get(configStorageKey, {})
   );
   config.tickMs = 100;
   config.recastCooldownMs = 2100;
-  config.assumedActiveMs = Math.max(5000, Number(config.assumedActiveMs) || 30000);
+  config.assumedActiveMs = 15000;
 
   function persistConfig() {
     bot.storage.set(configStorageKey, { ...config });
@@ -206,7 +206,7 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
       enabled: true,
       tickMs: 100,
       recastCooldownMs: 2100,
-      assumedActiveMs: Math.max(5000, Number(config.assumedActiveMs) || 30000),
+      assumedActiveMs: 15000,
     });
     config.spellWords = String(config.spellWords || "").trim();
     persistConfig();
@@ -240,7 +240,7 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
     Object.assign(config, nextConfig, {
       tickMs: 100,
       recastCooldownMs: 2100,
-      assumedActiveMs: Math.max(5000, Number(nextConfig.assumedActiveMs ?? config.assumedActiveMs) || 30000),
+      assumedActiveMs: 15000,
     });
     persistConfig();
     syncUi();
@@ -268,7 +268,7 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
         </label>
         <input type="text" id="minibia-bot-auto-haste-spell" placeholder="Spell words" />
       </div>
-      <div class="mb-small-note">Casts when haste is inactive. Holds for 30 seconds after a successful cast. Auto Heal has priority. Does not cast with monsters within 4 squares.</div>
+      <div class="mb-small-note">Casts when haste is inactive. Holds for 15 seconds after a successful cast. Auto Heal has priority. Does not cast with monsters within 4 squares.</div>
     `;
     autoHealStack.appendChild(wrapper);
 
