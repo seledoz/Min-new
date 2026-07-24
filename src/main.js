@@ -160,6 +160,7 @@
     currentBundle.installHealModule(bot);
     currentBundle.installAntiParalyzeModule?.(bot);
     currentBundle.installAutoHasteModule?.(bot);
+    currentBundle.installHasteParalyzeMonsterRangeGuard?.(bot);
     currentBundle.installDamageTtsAlertModule?.(bot);
     currentBundle.installAutoInvisibleModule(bot);
     currentBundle.installAutoMagicShieldModule(bot);
