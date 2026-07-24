@@ -315,9 +315,10 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
     });
 
     toggle.addEventListener("change", () => {
+      const shouldEnable = toggle.checked;
       const spellWords = String(spellInput.value || "").trim();
       updateConfig({ spellWords });
-      if (toggle.checked) start({ spellWords });
+      if (shouldEnable) start({ spellWords });
       else stop();
       toggle.checked = state.running;
     });
