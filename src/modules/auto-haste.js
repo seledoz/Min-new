@@ -22,7 +22,6 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
     },
     bot.storage.get(configStorageKey, {})
   );
-
   config.tickMs = 100;
   config.recastCooldownMs = 2100;
 
@@ -33,58 +32,40 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
   function isVisible(element) {
     if (!(element instanceof Element)) return false;
     if (element.closest("#minibia-bot-panel")) return false;
-
     const rect = element.getBoundingClientRect?.();
     if (!rect || rect.width < 8 || rect.height < 8) return false;
-
     const style = window.getComputedStyle?.(element);
     return !style || (style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) !== 0);
   }
 
   function getElementSignals(element) {
     if (!(element instanceof Element)) return "";
-
     const values = [
       element.id,
       element.className,
       element.getAttribute("title"),
       element.getAttribute("aria-label"),
       element.getAttribute("alt"),
-      element.getAttribute("name"),
       element.getAttribute("src"),
       element.getAttribute("data-condition"),
       element.getAttribute("data-status"),
       element.getAttribute("data-effect"),
       element.getAttribute("data-tooltip"),
-      element.getAttribute("style"),
     ];
-
     try {
       values.push(window.getComputedStyle(element).backgroundImage);
-    } catch (_error) {
-      // The icon may disappear while the status row is updating.
-    }
-
+    } catch (_error) {}
     return values.filter(Boolean).map(String).join(" ");
   }
 
   function getHasteConditionId() {
     const conditionManagerPrototype = window.ConditionManager?.prototype;
     const playerConditions = window.gameClient?.player?.conditions;
-    const candidateKeys = [
-      "HASTE",
-      "HASTED",
-      "SPEED",
-      "SWIFTNESS",
-      "UTANI_HUR",
-      "UTANI_GRAN_HUR",
-    ];
-
+    const candidateKeys = ["HASTE", "HASTED", "SPEED", "SWIFTNESS", "UTANI_HUR", "UTANI_GRAN_HUR"];
     for (const key of candidateKeys) {
       const value = conditionManagerPrototype?.[key] ?? playerConditions?.[key];
       if (typeof value === "number" && Number.isFinite(value)) return value;
     }
-
     return null;
   }
 
@@ -93,17 +74,14 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
     const conditions = player?.conditions;
     const conditionId = getHasteConditionId();
     if (conditionId == null) return false;
-
     if (typeof conditions?.has === "function" && conditions.has(conditionId)) {
       state.detectionSource = `condition:${conditionId}`;
       return true;
     }
-
     if (typeof player?.hasCondition === "function" && player.hasCondition(conditionId)) {
       state.detectionSource = `player-condition:${conditionId}`;
       return true;
     }
-
     return false;
   }
 
@@ -111,45 +89,48 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
     state.detectionSource = null;
     state.detectedElement = null;
 
-    const directSelector = [
+    // Search only real condition/status containers. The previous whole-page
+    // scan treated haste hotbar icons as active effects and stopped casting.
+    const statusRoots = Array.from(document.querySelectorAll([
+      "#conditions",
+      "#condition-bar",
+      "#conditionBar",
+      "#status-effects",
+      "#statusEffects",
+      ".conditions",
+      ".condition-bar",
+      ".status-effects",
+      ".status-icons",
+      ".buffs",
+      '[data-role="conditions"]',
+      '[data-role="status-effects"]',
+    ].join(","))).filter(isVisible);
+
+    const candidateSelector = [
       '[title*="haste" i]',
       '[aria-label*="haste" i]',
       '[alt*="haste" i]',
-      '[id*="haste" i]',
-      '[class*="haste" i]',
-      '[src*="haste" i]',
       '[data-condition*="haste" i]',
       '[data-status*="haste" i]',
       '[data-effect*="haste" i]',
       '[title*="speed" i]',
       '[aria-label*="speed" i]',
       '[alt*="speed" i]',
-      '[src*="speed" i]',
       '[title*="utani" i]',
       '[aria-label*="utani" i]',
       '[alt*="utani" i]',
-      '[src*="utani" i]',
+      "img",
+      '[class*="icon" i]',
     ].join(",");
 
-    for (const element of document.querySelectorAll(directSelector)) {
-      if (!isVisible(element)) continue;
-      state.detectedElement = element;
-      state.detectionSource = `direct:${element.id || element.className || element.tagName}`;
-      return element;
+    for (const root of statusRoots) {
+      for (const element of [root, ...root.querySelectorAll(candidateSelector)]) {
+        if (!isVisible(element) || !HASTE_PATTERN.test(getElementSignals(element))) continue;
+        state.detectedElement = element;
+        state.detectionSource = `status-area:${element.id || element.className || element.tagName}`;
+        return element;
+      }
     }
-
-    const candidates = document.querySelectorAll(
-      'img, [class*="status" i], [class*="condition" i], [class*="effect" i], [class*="buff" i], [class*="icon" i], [style*="background" i]'
-    );
-
-    for (const element of candidates) {
-      if (!isVisible(element)) continue;
-      if (!HASTE_PATTERN.test(getElementSignals(element))) continue;
-      state.detectedElement = element;
-      state.detectionSource = `status-icon:${element.id || element.className || element.tagName}`;
-      return element;
-    }
-
     return null;
   }
 
@@ -163,112 +144,45 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
     const healStatus = bot.heal?.status?.();
     const hp = Number(healStatus?.stats?.hp?.current);
     const minHp = Math.max(0, Number(bot.heal?.config?.minHp) || 0);
-
-    return (
-      !!healStatus?.running &&
-      !!bot.heal?.config?.enabled &&
-      Number.isFinite(hp) &&
-      hp > 0 &&
-      hp <= minHp
-    );
+    return !!healStatus?.running && !!bot.heal?.config?.enabled && Number.isFinite(hp) && hp > 0 && hp <= minHp;
   }
 
   function tryAutoHaste(now = Date.now()) {
     if (!state.running || !config.enabled) return false;
-
     const spellWords = String(config.spellWords || "").trim();
     if (!spellWords || isHasteActive(now)) return false;
-
     if (shouldPrioritizeHpHeal()) {
       bot.heal?.tryHeal?.();
       return false;
     }
-
     if (now - state.lastCastAt < config.recastCooldownMs) return false;
 
     const sent = bot.sendChat(spellWords);
     if (sent) {
       state.lastCastAt = now;
-      // Prevent duplicate casts while the game adds the boots-with-wings icon.
       state.assumedActiveUntil = now + config.recastCooldownMs;
-      bot.log("cast auto haste spell", {
-        spellWords,
-        cooldownMs: config.recastCooldownMs,
-        detectionSource: state.detectionSource,
-      });
+      bot.log("cast auto haste spell", { spellWords, cooldownMs: config.recastCooldownMs });
     }
-
     return sent;
   }
 
-  function scheduleNextTick() {
-    if (!state.running) return;
-    state.timerId = window.setTimeout(tick, config.tickMs);
+  function clearTimer() {
+    if (state.timerId != null) {
+      window.clearTimeout(state.timerId);
+      state.timerId = null;
+    }
   }
 
   function tick() {
     if (!state.running) return;
-
     try {
       tryAutoHaste();
     } catch (error) {
       bot.log("auto haste tick failed", error?.message || error);
     } finally {
-      scheduleNextTick();
+      clearTimer();
+      if (state.running) state.timerId = window.setTimeout(tick, config.tickMs);
     }
-  }
-
-  function start(overrides = {}) {
-    Object.assign(config, overrides, {
-      enabled: true,
-      tickMs: 100,
-      recastCooldownMs: 2100,
-    });
-    config.spellWords = String(config.spellWords || "").trim();
-    persistConfig();
-
-    if (state.running) {
-      syncUi();
-      return false;
-    }
-
-    state.running = true;
-    tick();
-    syncUi();
-    bot.log("auto haste started", { ...config });
-    return true;
-  }
-
-  function stop(options = {}) {
-    state.running = false;
-
-    if (state.timerId != null) {
-      window.clearTimeout(state.timerId);
-      state.timerId = null;
-    }
-
-    if (options.persistEnabled !== false) {
-      config.enabled = false;
-      persistConfig();
-    }
-
-    syncUi();
-    bot.log("auto haste stopped");
-    return true;
-  }
-
-  function updateConfig(nextConfig = {}) {
-    if (Object.prototype.hasOwnProperty.call(nextConfig, "spellWords")) {
-      nextConfig.spellWords = String(nextConfig.spellWords || "").trim();
-    }
-
-    Object.assign(config, nextConfig, {
-      tickMs: 100,
-      recastCooldownMs: 2100,
-    });
-    persistConfig();
-    syncUi();
-    return { ...config };
   }
 
   function syncUi() {
@@ -278,15 +192,51 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
     if (spellInput && document.activeElement !== spellInput) spellInput.value = config.spellWords || "";
   }
 
+  function start(overrides = {}) {
+    Object.assign(config, overrides, { enabled: true, tickMs: 100, recastCooldownMs: 2100 });
+    config.spellWords = String(config.spellWords || "").trim();
+    persistConfig();
+    if (state.running) {
+      syncUi();
+      tryAutoHaste();
+      return false;
+    }
+    state.running = true;
+    tick();
+    syncUi();
+    bot.log("auto haste started", { ...config });
+    return true;
+  }
+
+  function stop(options = {}) {
+    state.running = false;
+    clearTimer();
+    if (options.persistEnabled !== false) {
+      config.enabled = false;
+      persistConfig();
+    }
+    syncUi();
+    bot.log("auto haste stopped");
+    return true;
+  }
+
+  function updateConfig(nextConfig = {}) {
+    if (Object.prototype.hasOwnProperty.call(nextConfig, "spellWords")) {
+      nextConfig.spellWords = String(nextConfig.spellWords || "").trim();
+    }
+    Object.assign(config, nextConfig, { tickMs: 100, recastCooldownMs: 2100 });
+    persistConfig();
+    syncUi();
+    return { ...config };
+  }
+
   function installUi() {
     if (document.getElementById("minibia-bot-auto-haste-enabled")) {
       syncUi();
       return true;
     }
-
     const autoHealToggle = document.getElementById("minibia-bot-auto-heal-enabled");
-    const autoHealSection = autoHealToggle?.closest?.(".mb-section");
-    const autoHealStack = autoHealSection?.querySelector?.(".mb-stack");
+    const autoHealStack = autoHealToggle?.closest?.(".mb-section")?.querySelector?.(".mb-stack");
     if (!autoHealStack) return false;
 
     const wrapper = document.createElement("div");
@@ -301,7 +251,7 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
         </label>
         <input type="text" id="minibia-bot-auto-haste-spell" placeholder="Spell words" />
       </div>
-      <div class="mb-small-note">Casts when the boots-with-wings haste icon is missing. Auto Heal has priority. Cooldown: 2100 ms.</div>
+      <div class="mb-small-note">Casts when haste is inactive. Auto Heal has priority. Does not cast with monsters within 4 squares.</div>
     `;
     autoHealStack.appendChild(wrapper);
 
@@ -309,20 +259,14 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
     const spellInput = wrapper.querySelector("#minibia-bot-auto-haste-spell");
     spellInput.value = config.spellWords || "";
     toggle.checked = state.running;
-
-    spellInput.addEventListener("change", () => {
-      updateConfig({ spellWords: spellInput.value });
-    });
-
+    spellInput.addEventListener("change", () => updateConfig({ spellWords: spellInput.value }));
     toggle.addEventListener("change", () => {
-      const shouldEnable = toggle.checked;
       const spellWords = String(spellInput.value || "").trim();
       updateConfig({ spellWords });
-      if (shouldEnable) start({ spellWords });
+      if (toggle.checked) start({ spellWords });
       else stop();
       toggle.checked = state.running;
     });
-
     return true;
   }
 
@@ -334,13 +278,11 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
       hasteActive,
       healPriorityActive: shouldPrioritizeHpHeal(),
       detectionSource: state.detectionSource,
-      detectedElement: state.detectedElement
-        ? {
-            tag: state.detectedElement.tagName,
-            id: state.detectedElement.id || null,
-            className: String(state.detectedElement.className || "") || null,
-          }
-        : null,
+      detectedElement: state.detectedElement ? {
+        tag: state.detectedElement.tagName,
+        id: state.detectedElement.id || null,
+        className: String(state.detectedElement.className || "") || null,
+      } : null,
       lastCastAt: state.lastCastAt,
     };
   }
