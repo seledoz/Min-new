@@ -19,11 +19,13 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
       spellWords: "",
       tickMs: 100,
       recastCooldownMs: 2100,
+      assumedActiveMs: 30000,
     },
     bot.storage.get(configStorageKey, {})
   );
   config.tickMs = 100;
   config.recastCooldownMs = 2100;
+  config.assumedActiveMs = Math.max(5000, Number(config.assumedActiveMs) || 30000);
 
   function persistConfig() {
     bot.storage.set(configStorageKey, { ...config });
@@ -89,8 +91,6 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
     state.detectionSource = null;
     state.detectedElement = null;
 
-    // Search only real condition/status containers. The previous whole-page
-    // scan treated haste hotbar icons as active effects and stopped casting.
     const statusRoots = Array.from(document.querySelectorAll([
       "#conditions",
       "#condition-bar",
@@ -137,7 +137,11 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
   function isHasteActive(now = Date.now()) {
     if (hasHasteCondition()) return true;
     if (findHasteStatusIcon()) return true;
-    return now < state.assumedActiveUntil;
+    if (now < state.assumedActiveUntil) {
+      state.detectionSource = "post-cast-hold";
+      return true;
+    }
+    return false;
   }
 
   function shouldPrioritizeHpHeal() {
@@ -160,8 +164,13 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
     const sent = bot.sendChat(spellWords);
     if (sent) {
       state.lastCastAt = now;
-      state.assumedActiveUntil = now + config.recastCooldownMs;
-      bot.log("cast auto haste spell", { spellWords, cooldownMs: config.recastCooldownMs });
+      state.assumedActiveUntil = now + config.assumedActiveMs;
+      state.detectionSource = "post-cast-hold";
+      bot.log("cast auto haste spell", {
+        spellWords,
+        cooldownMs: config.recastCooldownMs,
+        assumedActiveMs: config.assumedActiveMs,
+      });
     }
     return sent;
   }
@@ -193,7 +202,12 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
   }
 
   function start(overrides = {}) {
-    Object.assign(config, overrides, { enabled: true, tickMs: 100, recastCooldownMs: 2100 });
+    Object.assign(config, overrides, {
+      enabled: true,
+      tickMs: 100,
+      recastCooldownMs: 2100,
+      assumedActiveMs: Math.max(5000, Number(config.assumedActiveMs) || 30000),
+    });
     config.spellWords = String(config.spellWords || "").trim();
     persistConfig();
     if (state.running) {
@@ -210,6 +224,7 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
 
   function stop(options = {}) {
     state.running = false;
+    state.assumedActiveUntil = 0;
     clearTimer();
     if (options.persistEnabled !== false) {
       config.enabled = false;
@@ -224,7 +239,11 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
     if (Object.prototype.hasOwnProperty.call(nextConfig, "spellWords")) {
       nextConfig.spellWords = String(nextConfig.spellWords || "").trim();
     }
-    Object.assign(config, nextConfig, { tickMs: 100, recastCooldownMs: 2100 });
+    Object.assign(config, nextConfig, {
+      tickMs: 100,
+      recastCooldownMs: 2100,
+      assumedActiveMs: Math.max(5000, Number(nextConfig.assumedActiveMs ?? config.assumedActiveMs) || 30000),
+    });
     persistConfig();
     syncUi();
     return { ...config };
@@ -251,7 +270,7 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
         </label>
         <input type="text" id="minibia-bot-auto-haste-spell" placeholder="Spell words" />
       </div>
-      <div class="mb-small-note">Casts when haste is inactive. Auto Heal has priority. Does not cast with monsters within 4 squares.</div>
+      <div class="mb-small-note">Casts when haste is inactive. Holds for 30 seconds after a successful cast. Auto Heal has priority. Does not cast with monsters within 4 squares.</div>
     `;
     autoHealStack.appendChild(wrapper);
 
@@ -261,11 +280,16 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
     toggle.checked = state.running;
     spellInput.addEventListener("change", () => updateConfig({ spellWords: spellInput.value }));
     toggle.addEventListener("change", () => {
+      const shouldEnable = toggle.checked;
       const spellWords = String(spellInput.value || "").trim();
-      updateConfig({ spellWords });
-      if (toggle.checked) start({ spellWords });
-      else stop();
-      toggle.checked = state.running;
+      if (shouldEnable) {
+        updateConfig({ spellWords });
+        start({ spellWords });
+      } else {
+        config.spellWords = spellWords;
+        stop();
+      }
+      syncUi();
     });
     return true;
   }
@@ -284,6 +308,7 @@ window.__minibiaBotBundle.installAutoHasteModule = function installAutoHasteModu
         className: String(state.detectedElement.className || "") || null,
       } : null,
       lastCastAt: state.lastCastAt,
+      assumedActiveUntil: state.assumedActiveUntil,
     };
   }
 
