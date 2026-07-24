@@ -163,11 +163,67 @@
     }, 250);
   }
 
+  function addEnergyWaveCastDelay(code) {
+    const triggerPattern = /  function triggerEnergyWave\(now = Date\.now\(\)\) \{[\s\S]*?\n  \}\n\n(?=  function getGfbTiles)/;
+    if (!triggerPattern.test(code)) {
+      console.warn("[minibia-bot] Energy Wave delay patch was not applied: trigger function not found");
+      return code;
+    }
+
+    const delayedTrigger = `  function triggerEnergyWave(now = Date.now()) {
+    if (state.energyWaveCastPending) return true;
+    if (!canCastEnergyWave(now)) return false;
+
+    state.energyWaveCastPending = true;
+    state.energyWaveCastTimerId = window.setTimeout(() => {
+      state.energyWaveCastPending = false;
+      state.energyWaveCastTimerId = null;
+
+      const castNow = Date.now();
+      if (!canCastEnergyWave(castNow)) {
+        refreshUiValues();
+        return;
+      }
+
+      const slot = normalizeHotbarSlot(config.energyWaveHotbarSlot);
+      const best = getBestEnergyWaveCandidate();
+      if (!slot || !best || best.count < positiveInt(config.energyWaveMinMonsters, 3)) {
+        refreshUiValues();
+        return;
+      }
+
+      if (!setCurrentTarget(best.target)) {
+        bot.log("energy wave target switch failed", { target: best.target?.name || "Mob", id: best.target?.id });
+        refreshUiValues();
+        return;
+      }
+
+      const clicked = bot.clickHotbar(slot - 1);
+      if (clicked) {
+        state.lastEnergyWaveHotkeyAt = castNow;
+        state.lastEnergyWaveMonsterCount = best.count;
+        state.lastEnergyWaveTargetName = best.target?.name || "Mob";
+        bot.log("used energy wave hotkey", { slot, monsterCount: best.count, target: state.lastEnergyWaveTargetName, direction: best.direction, shape: "1-3-3-3", castDelayMs: 150 });
+      }
+      refreshUiValues();
+    }, 150);
+
+    return true;
+  }
+
+`;
+
+    return code.replace(triggerPattern, delayedTrigger);
+  }
+
   async function loadSourceFile(path) {
     const response = await fetch(`${rawBaseUrl}/${path}?t=${Date.now()}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`Failed to load ${path}: HTTP ${response.status}`);
 
     let code = await response.text();
+    if (path === "src/modules/auto-attack-aoe.js") {
+      code = addEnergyWaveCastDelay(code);
+    }
     if (path === "src/version.js") {
       code = code
         .replaceAll("%%BRANCH%%", ref)
